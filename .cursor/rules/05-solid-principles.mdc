@@ -1,0 +1,411 @@
+---
+description: "SOLID principles with detailed examples for Clean Architecture. Apply to all layers but especially important in domain and data layers."
+globs:
+  - "lib/**/*.dart"
+  - "android/**/*.kt"
+  - "ios/**/*.swift"
+alwaysApply: false
+---
+
+# SOLID Principles
+
+## S - Single Responsibility Principle
+**A class should have only ONE reason to change.**
+
+```dart
+// ❌ BAD: Multiple responsibilities
+class CameraManager {
+  void connect() { /* P2P connection logic */ }
+  void disconnect() { /* Disconnection logic */ }
+  void saveToDatabase() { /* Database logic */ }
+  void sendAnalytics() { /* Analytics logic */ }
+  void showNotification() { /* UI logic */ }
+}
+
+// ✅ GOOD: Single responsibility per class
+class CameraConnectionService {
+  Future<void> connect(String id) async { /* Only connection */ }
+  Future<void> disconnect() async { /* Only disconnection */ }
+}
+
+class CameraRepository {
+  Future<void> save(Camera camera) async { /* Only persistence */ }
+  Future<Camera?> get(String id) async { /* Only retrieval */ }
+}
+
+class CameraAnalytics {
+  void trackConnection(String cameraId) { /* Only analytics */ }
+}
+
+class CameraNotificationService {
+  void showConnectionNotification() { /* Only notifications */ }
+}
+```
+
+### Real example from our project
+```dart
+// ✅ GOOD: UseCase with single responsibility
+class ConnectCameraUseCase {
+  final CameraRepository _repository;
+  final CameraAnalytics _analytics;
+  
+  ConnectCameraUseCase(this._repository, this._analytics);
+  
+  Future<Camera> call(String cameraId) async {
+    final camera = await _repository.connect(cameraId);
+    _analytics.trackConnection(cameraId);
+    return camera;
+  }
+}
+```
+
+## O - Open/Closed Principle
+**Open for extension, closed for modification.**
+
+```dart
+// ❌ BAD: Need to modify class to add new video source
+class VideoPlayer {
+  void play(String type) {
+    if (type == 'live') {
+      // Play live stream
+    } else if (type == 'tfcard') {
+      // Play TF card
+    } else if (type == 'network') {  // Need to modify to add!
+      // Play network file
+    }
+  }
+}
+
+// ✅ GOOD: Extend behavior through inheritance/composition
+abstract class VideoSource {
+  Stream<VideoFrame> get frameStream;
+  Future<void> start();
+  Future<void> stop();
+}
+
+class LiveStreamSource implements VideoSource {
+  @override
+  Stream<VideoFrame> get frameStream => _device.liveStream;
+  
+  @override
+  Future<void> start() async => await _device.startLive();
+  
+  @override
+  Future<void> stop() async => await _device.stopLive();
+}
+
+class TFCardSource implements VideoSource {
+  @override
+  Stream<VideoFrame> get frameStream => _device.tfStream;
+  
+  @override
+  Future<void> start() async => await _device.startTFPlayback();
+  
+  @override
+  Future<void> stop() async => await _device.stopTFPlayback();
+}
+
+// Add new source without modifying existing code
+class NetworkFileSource implements VideoSource {
+  @override
+  Stream<VideoFrame> get frameStream => _networkStream;
+  
+  @override
+  Future<void> start() async => await _downloadAndPlay();
+  
+  @override
+  Future<void> stop() async => await _stopDownload();
+}
+
+class VideoPlayer {
+  final VideoSource source;
+  
+  VideoPlayer(this.source);
+  
+  void play() => source.start();  // No modification needed!
+}
+```
+
+## L - Liskov Substitution Principle
+**Subtypes must be substitutable for their base types.**
+
+```dart
+// ❌ BAD: Subtype changes expected behavior
+abstract class Camera {
+  Future<bool> connect();
+  Future<void> disconnect();
+}
+
+class WiFiCamera extends Camera {
+  @override
+  Future<bool> connect() async {
+    // Works as expected
+    return true;
+  }
+  
+  @override
+  Future<void> disconnect() async {
+    // Works as expected
+  }
+}
+
+class BatteryCamera extends Camera {
+  @override
+  Future<bool> connect() async {
+    // Works as expected
+    return true;
+  }
+  
+  @override
+  Future<void> disconnect() async {
+    throw UnimplementedError('Battery cameras cannot disconnect!');
+    // Violates LSP - client expects disconnect to work!
+  }
+}
+
+// ✅ GOOD: Subtypes behave consistently
+abstract class Camera {
+  Future<bool> connect();
+  Future<void> disconnect();
+}
+
+class WiFiCamera extends Camera {
+  @override
+  Future<bool> connect() async => await _connectWiFi();
+  
+  @override
+  Future<void> disconnect() async => await _disconnectWiFi();
+}
+
+class BatteryCamera extends Camera {
+  @override
+  Future<bool> connect() async => await _connectBattery();
+  
+  @override
+  Future<void> disconnect() async {
+    // Still disconnects, but may have different internal behavior
+    await _savePowerState();
+    await _disconnectBattery();
+  }
+}
+
+// Client code works with any Camera subtype
+Future<void> useCamera(Camera camera) async {
+  await camera.connect();
+  // ... do work ...
+  await camera.disconnect();  // Always works!
+}
+```
+
+## I - Interface Segregation Principle
+**Clients should not depend on interfaces they don't use.**
+
+```dart
+// ❌ BAD: Fat interface with many methods
+abstract class CameraDevice {
+  Future<void> connect();
+  Future<void> disconnect();
+  Future<void> startLiveStream();
+  Future<void> stopLiveStream();
+  Future<void> startTFPlayback();
+  Future<void> stopTFPlayback();
+  Future<void> takePicture();
+  Future<void> startRecording();
+  Future<void> stopRecording();
+  Future<void> setPTZ(int pan, int tilt, int zoom);
+  Future<void> setAlarm(bool enabled);
+  // BasicCamera only needs connect/disconnect but must implement ALL!
+}
+
+// ✅ GOOD: Segregated interfaces
+abstract class Connectable {
+  Future<void> connect();
+  Future<void> disconnect();
+}
+
+abstract class LiveStreamable {
+  Future<void> startLiveStream();
+  Future<void> stopLiveStream();
+}
+
+abstract class Recordable {
+  Future<void> startRecording();
+  Future<void> stopRecording();
+}
+
+abstract class PTZControllable {
+  Future<void> setPTZ(int pan, int tilt, int zoom);
+}
+
+// Implement only what you need
+class BasicCamera implements Connectable {
+  @override
+  Future<void> connect() async { /* ... */ }
+  
+  @override
+  Future<void> disconnect() async { /* ... */ }
+}
+
+class PTZCamera implements Connectable, LiveStreamable, PTZControllable {
+  @override
+  Future<void> connect() async { /* ... */ }
+  
+  @override
+  Future<void> disconnect() async { /* ... */ }
+  
+  @override
+  Future<void> startLiveStream() async { /* ... */ }
+  
+  @override
+  Future<void> stopLiveStream() async { /* ... */ }
+  
+  @override
+  Future<void> setPTZ(int pan, int tilt, int zoom) async { /* ... */ }
+}
+```
+
+## D - Dependency Inversion Principle
+**Depend on abstractions, not concretions.**
+
+```dart
+// ❌ BAD: High-level depends on low-level
+class CameraBloc {
+  final VeepaiSDK sdk;  // Depends on concrete implementation!
+  
+  CameraBloc(this.sdk);
+  
+  Future<void> connectCamera(String id) async {
+    await sdk.connect(id);  // Tightly coupled to Veepai SDK
+  }
+}
+
+// ✅ GOOD: Depend on abstraction
+// Domain layer - abstraction
+abstract class CameraRepository {
+  Future<Camera> connect(String id);
+  Future<void> disconnect();
+  Stream<CameraStatus> watchStatus(String id);
+}
+
+// Infrastructure layer - concrete implementation
+class VeepaiCameraRepository implements CameraRepository {
+  final VeepaiSDK _sdk;  // SDK is internal detail
+  
+  VeepaiCameraRepository(this._sdk);
+  
+  @override
+  Future<Camera> connect(String id) async {
+    final device = await _sdk.connect(id);
+    return Camera.fromSDK(device);
+  }
+  
+  @override
+  Future<void> disconnect() async => await _sdk.disconnect();
+  
+  @override
+  Stream<CameraStatus> watchStatus(String id) {
+    return _sdk.statusStream.map((s) => CameraStatus.fromSDK(s));
+  }
+}
+
+// Presentation layer - depends on abstraction
+class CameraBloc {
+  final CameraRepository _repository;  // Abstraction, not concrete!
+  
+  CameraBloc(this._repository);
+  
+  Future<void> connectCamera(String id) async {
+    final camera = await _repository.connect(id);  // Works with ANY implementation!
+  }
+}
+
+// Easy to test with mock
+class MockCameraRepository implements CameraRepository {
+  @override
+  Future<Camera> connect(String id) async => Camera(id: id, name: 'Mock');
+  
+  @override
+  Future<void> disconnect() async {}
+  
+  @override
+  Stream<CameraStatus> watchStatus(String id) => Stream.value(CameraStatus.online);
+}
+```
+
+## Combining SOLID Principles
+
+### Real-world example
+```dart
+// ✅ EXCELLENT: All SOLID principles together
+
+// I: Interface segregation
+abstract class Connectable {
+  Future<bool> connect();
+  Future<void> disconnect();
+}
+
+abstract class Streamable {
+  Stream<VideoFrame> get videoStream;
+}
+
+// D: Depend on abstraction
+abstract class CameraRepository implements Connectable, Streamable {
+  Future<Camera> getCamera(String id);
+}
+
+// O: Open for extension
+class VeepaiCameraRepository implements CameraRepository {
+  final VeepaiSDK _sdk;
+  
+  VeepaiCameraRepository(this._sdk);
+  
+  @override
+  Future<bool> connect() async => await _sdk.connect();
+  
+  @override
+  Future<void> disconnect() async => await _sdk.disconnect();
+  
+  @override
+  Stream<VideoFrame> get videoStream => _sdk.frameStream;
+  
+  @override
+  Future<Camera> getCamera(String id) async {
+    final device = await _sdk.getDevice(id);
+    return Camera.fromSDK(device);
+  }
+}
+
+// S: Single responsibility
+class ConnectCameraUseCase {
+  final CameraRepository _repository;
+  
+  ConnectCameraUseCase(this._repository);
+  
+  Future<Camera> call(String cameraId) async {
+    await _repository.connect();
+    return await _repository.getCamera(cameraId);
+  }
+}
+
+// L: Liskov substitution
+class CameraBloc {
+  final ConnectCameraUseCase _connectUseCase;  // Uses abstraction
+  
+  CameraBloc(this._connectUseCase);
+  
+  Future<void> onConnect(String id) async {
+    final camera = await _connectUseCase(id);  // Works with any implementation
+    emit(CameraConnected(camera));
+  }
+}
+```
+
+## Quick Reference
+
+| Principle | Question to Ask |
+|-----------|----------------|
+| **S**RP | Does this class have more than one reason to change? |
+| **O**CP | Do I need to modify this class to add new behavior? |
+| **L**SP | Can I replace the parent with this child class? |
+| **I**SP | Does this interface force clients to implement unused methods? |
+| **D**IP | Am I depending on concrete classes instead of abstractions? |

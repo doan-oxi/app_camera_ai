@@ -1,0 +1,366 @@
+---
+description: "Swift best practices for iOS native development with Flutter method channels, Combine, async/await, and modern iOS SDK patterns."
+globs:
+  - "ios/**/*.swift"
+  - "ios/**/*.m"
+  - "ios/**/*.h"
+alwaysApply: false
+---
+
+# Swift/iOS Native Rules
+
+## Method Channel Patterns
+
+### Plugin Setup
+```swift
+// ✅ GOOD: Clean plugin structure
+public class CameraPlugin: NSObject, FlutterPlugin {
+    private var channel: FlutterMethodChannel?
+    
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(
+            name: "camera_plugin",
+            binaryMessenger: registrar.messenger()
+        )
+        let instance = CameraPlugin()
+        instance.channel = channel
+        registrar.addMethodCallDelegate(instance, channel: channel)
+    }
+    
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "connect":
+            connectCamera(call: call, result: result)
+        case "disconnect":
+            disconnectCamera(result: result)
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+}
+```
+
+### Async Operations with async/await
+```swift
+// ✅ GOOD: Use async/await (iOS 15+)
+private func connectCamera(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let cameraId = args["id"] as? String else {
+        result(FlutterError(
+            code: "INVALID_ARGUMENT",
+            message: "Camera ID required",
+            details: nil
+        ))
+        return
+    }
+    
+    Task {
+        do {
+            let camera = try await cameraRepository.connect(cameraId)
+            await MainActor.run {
+                result(camera.toDictionary())
+            }
+        } catch {
+            await MainActor.run {
+                result(FlutterError(
+                    code: "CONNECTION_ERROR",
+                    message: error.localizedDescription,
+                    details: nil
+                ))
+            }
+        }
+    }
+}
+
+// ❌ BAD: Blocking main thread
+private func connectCamera(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let camera = cameraRepository.connect(id)  // Blocks UI!
+    result(camera)
+}
+```
+
+## Combine Framework
+
+### Publishers for reactive streams
+```swift
+// ✅ GOOD: Use Combine for streams
+import Combine
+
+class VideoStreamManager {
+    private let frameSubject = PassthroughSubject<VideoFrame, Never>()
+    private var cancellables = Set<AnyCancellable>()
+    
+    var framePublisher: AnyPublisher<VideoFrame, Never> {
+        frameSubject.eraseToAnyPublisher()
+    }
+    
+    func startStream() {
+        sdk.videoStream
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] rawData in
+                self?.frameSubject.send(VideoFrame(data: rawData))
+            }
+            .store(in: &cancellables)
+    }
+    
+    func stopStream() {
+        cancellables.removeAll()
+    }
+}
+
+// ✅ GOOD: Combine multiple publishers
+let cameraState = Publishers.CombineLatest3(
+    connectionPublisher,
+    batteryPublisher,
+    statusPublisher
+)
+.map { connection, battery, status in
+    CameraState(connection: connection, battery: battery, status: status)
+}
+.eraseToAnyPublisher()
+```
+
+## Concurrency
+
+### Use proper dispatch queues
+```swift
+// ✅ GOOD: Use appropriate queues
+class CameraRepository {
+    private let ioQueue = DispatchQueue(label: "com.app.camera.io", qos: .userInitiated)
+    
+    func connect(_ id: String) async throws -> Camera {
+        return try await withCheckedThrowingContinuation { continuation in
+            ioQueue.async {
+                do {
+                    let camera = try self.sdk.connect(id)
+                    continuation.resume(returning: camera)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+// ✅ GOOD: MainActor for UI updates
+@MainActor
+class CameraViewModel: ObservableObject {
+    @Published var camera: Camera?
+    @Published var isConnecting = false
+    
+    func connect(_ id: String) async {
+        isConnecting = true
+        defer { isConnecting = false }
+        
+        do {
+            camera = try await repository.connect(id)
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+## Error Handling
+
+### Proper error types
+```swift
+// ✅ GOOD: Custom error enum
+enum CameraError: Error {
+    case connectionTimeout
+    case networkUnavailable
+    case invalidCredentials
+    case unknown(Error)
+    
+    var message: String {
+        switch self {
+        case .connectionTimeout:
+            return "Connection timeout"
+        case .networkUnavailable:
+            return "Network unavailable"
+        case .invalidCredentials:
+            return "Invalid credentials"
+        case .unknown(let error):
+            return error.localizedDescription
+        }
+    }
+}
+
+// ✅ GOOD: Handle specific errors
+func connectCamera(_ id: String) async throws -> Camera {
+    do {
+        return try await withTimeout(seconds: 5) {
+            try await sdk.connect(id)
+        }
+    } catch is TimeoutError {
+        throw CameraError.connectionTimeout
+    } catch URLError.notConnectedToInternet {
+        throw CameraError.networkUnavailable
+    } catch {
+        throw CameraError.unknown(error)
+    }
+}
+```
+
+## Code Style
+
+### Swift idioms
+```swift
+// ✅ GOOD: Use Swift features
+struct Camera: Codable {
+    let id: String
+    let name: String
+    var status: CameraStatus = .offline
+    
+    var isOnline: Bool {
+        status == .online
+    }
+}
+
+extension Camera {
+    func toDictionary() -> [String: Any] {
+        [
+            "id": id,
+            "name": name,
+            "status": status.rawValue
+        ]
+    }
+}
+
+// ✅ GOOD: Optional handling
+let name: String? = camera?.name
+let displayName = name ?? "Unknown"
+
+// ✅ GOOD: Guard statements
+guard let camera = camera else { return }
+connectCamera(camera)
+startStream(camera)
+
+// ✅ GOOD: Functional style
+let onlineCameras = cameras
+    .filter { $0.isOnline }
+    .map { $0.name }
+```
+
+## Memory Management
+
+### Avoid retain cycles
+```swift
+// ✅ GOOD: Use [weak self] in closures
+class CameraManager {
+    func startMonitoring() {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.checkStatus()
+        }
+    }
+    
+    func observeConnection() {
+        connectionPublisher
+            .sink { [weak self] connection in
+                self?.handleConnection(connection)
+            }
+            .store(in: &cancellables)
+    }
+}
+
+// ❌ BAD: Strong reference cycle
+timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+    self.checkStatus()  // Leaks!
+}
+```
+
+## Protocol-Oriented Programming
+
+### Use protocols for abstraction
+```swift
+// ✅ GOOD: Protocol for repository
+protocol CameraRepository {
+    func getCamera(_ id: String) async throws -> Camera
+    func watchStatus(_ id: String) -> AnyPublisher<CameraStatus, Never>
+}
+
+class CameraRepositoryImpl: CameraRepository {
+    private let sdk: CameraSDK
+    private let localDb: CameraDatabase
+    
+    init(sdk: CameraSDK, localDb: CameraDatabase) {
+        self.sdk = sdk
+        self.localDb = localDb
+    }
+    
+    func getCamera(_ id: String) async throws -> Camera {
+        if let cached = try await localDb.getCamera(id) {
+            return cached
+        }
+        return try await sdk.fetchCamera(id)
+    }
+}
+```
+
+## Testing
+
+### Unit tests with async/await
+```swift
+// ✅ GOOD: Test async code
+import XCTest
+
+class CameraRepositoryTests: XCTestCase {
+    func testConnectCamera() async throws {
+        let repository = CameraRepository(sdk: mockSDK, localDb: mockDB)
+        let camera = try await repository.connect("camera_123")
+        
+        XCTAssertEqual(camera.id, "camera_123")
+        XCTAssertTrue(camera.isOnline)
+    }
+}
+```
+
+## Performance
+
+### Optimize allocations
+```swift
+// ✅ GOOD: Reuse objects
+private var frameBuffer = Data(count: 1024 * 1024)
+
+func processFrame(_ data: Data) {
+    frameBuffer.replaceSubrange(0..<data.count, with: data)
+    // Process frameBuffer
+}
+
+// ✅ GOOD: Lazy initialization
+lazy var cameraManager: CameraManager = {
+    CameraManager(sdk: self.sdk)
+}()
+
+// ✅ GOOD: Use value types
+struct VideoFrame {  // Value type - stack allocated
+    let timestamp: TimeInterval
+    let data: Data
+}
+```
+
+## Objective-C Interop
+
+### Wrapping Objective-C SDK
+```swift
+// ✅ GOOD: Swift wrapper for Obj-C SDK
+class CameraSDKWrapper {
+    private let objcSDK: VeepaiSDK
+    
+    init(objcSDK: VeepaiSDK) {
+        self.objcSDK = objcSDK
+    }
+    
+    func connect(_ id: String) async throws -> Camera {
+        try await withCheckedThrowingContinuation { continuation in
+            objcSDK.connect(id) { camera, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let camera = camera {
+                    continuation.resume(returning: Camera(from: camera))
+                }
+            }
+        }
+    }
+}
+```

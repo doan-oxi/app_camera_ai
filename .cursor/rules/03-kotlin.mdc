@@ -1,0 +1,254 @@
+---
+description: "Kotlin best practices for Android native development with Flutter method channels, Coroutines, and modern Android SDK patterns."
+globs:
+  - "android/**/*.kt"
+  - "android/**/*.java"
+alwaysApply: false
+---
+
+# Kotlin/Android Native Rules
+
+## Method Channel Patterns
+
+### Plugin Setup
+```kotlin
+// ✅ GOOD: Clean plugin structure
+class CameraPlugin : FlutterPlugin, MethodCallHandler {
+    private lateinit var channel: MethodChannel
+    private lateinit var context: Context
+    
+    override fun onAttachedToEngine(binding: FlutterPluginBinding) {
+        context = binding.applicationContext
+        channel = MethodChannel(binding.binaryMessenger, "camera_plugin")
+        channel.setMethodCallHandler(this)
+    }
+    
+    override fun onMethodCall(call: MethodCall, result: Result) {
+        when (call.method) {
+            "connect" -> connectCamera(call, result)
+            "disconnect" -> disconnectCamera(result)
+            else -> result.notImplemented()
+        }
+    }
+    
+    override fun onDetachedFromEngine(binding: FlutterPluginBinding) {
+        channel.setMethodCallHandler(null)
+    }
+}
+```
+
+### Async Operations with Coroutines
+```kotlin
+// ✅ GOOD: Use Coroutines for async work
+private fun connectCamera(call: MethodCall, result: Result) {
+    val cameraId = call.argument<String>("id") ?: run {
+        result.error("INVALID_ARGUMENT", "Camera ID required", null)
+        return
+    }
+    
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val camera = cameraRepository.connect(cameraId)
+            withContext(Dispatchers.Main) {
+                result.success(camera.toMap())
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                result.error("CONNECTION_ERROR", e.message, null)
+            }
+        }
+    }
+}
+
+// ❌ BAD: Blocking main thread
+private fun connectCamera(call: MethodCall, result: Result) {
+    val camera = cameraRepository.connect(id)  // Blocks UI!
+    result.success(camera)
+}
+```
+
+## Coroutines Best Practices
+
+### Use appropriate dispatchers
+```kotlin
+// ✅ GOOD: Choose correct dispatcher
+class CameraRepository(private val sdk: CameraSDK) {
+    
+    suspend fun connect(id: String): Camera = withContext(Dispatchers.IO) {
+        // Network/IO operations
+        sdk.connect(id)
+    }
+    
+    suspend fun processFrame(frame: ByteArray): Bitmap = withContext(Dispatchers.Default) {
+        // CPU-intensive work
+        BitmapFactory.decodeByteArray(frame, 0, frame.size)
+    }
+    
+    suspend fun updateUI(camera: Camera) = withContext(Dispatchers.Main) {
+        // UI updates
+        notifyListeners(camera)
+    }
+}
+```
+
+### Flow for streams
+```kotlin
+// ✅ GOOD: Use Flow for continuous data
+class VideoStreamManager {
+    private val _frameFlow = MutableStateFlow<VideoFrame?>(null)
+    val frameFlow: StateFlow<VideoFrame?> = _frameFlow.asStateFlow()
+    
+    fun startStream() {
+        CoroutineScope(Dispatchers.IO).launch {
+            sdk.videoStream.collect { rawData ->
+                _frameFlow.emit(VideoFrame(rawData))
+            }
+        }
+    }
+}
+
+// ✅ GOOD: Combine multiple flows
+val cameraState: Flow<CameraState> = combine(
+    connectionFlow,
+    batteryFlow,
+    statusFlow
+) { connection, battery, status ->
+    CameraState(connection, battery, status)
+}
+```
+
+## Android Lifecycle
+
+### Handle lifecycle properly
+```kotlin
+// ✅ GOOD: Lifecycle-aware components
+class CameraManager(private val lifecycle: Lifecycle) : LifecycleObserver {
+    
+    @OnLifecycleEvent(Lifecycle.Event.ON_START)
+    fun onStart() {
+        connectCamera()
+    }
+    
+    @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
+    fun onStop() {
+        disconnectCamera()
+    }
+    
+    init {
+        lifecycle.addObserver(this)
+    }
+}
+```
+
+## Error Handling
+
+### Proper exception handling
+```kotlin
+// ✅ GOOD: Specific error handling
+suspend fun connectCamera(id: String): Result<Camera> = try {
+    val camera = withTimeout(5000) {
+        sdk.connect(id)
+    }
+    Result.success(camera)
+} catch (e: TimeoutCancellationException) {
+    Result.failure(ConnectionTimeoutException())
+} catch (e: IOException) {
+    Result.failure(NetworkException(e))
+} catch (e: Exception) {
+    Result.failure(UnknownException(e))
+}
+
+// ❌ BAD: Swallowing exceptions
+try {
+    sdk.connect(id)
+} catch (e: Exception) {
+    // Silent failure - BAD!
+}
+```
+
+## Code Style
+
+### Kotlin idioms
+```kotlin
+// ✅ GOOD: Use Kotlin features
+data class Camera(
+    val id: String,
+    val name: String,
+    val status: CameraStatus = CameraStatus.OFFLINE
+)
+
+fun Camera.isOnline(): Boolean = status == CameraStatus.ONLINE
+
+val cameras = listOf<Camera>()
+    .filter { it.isOnline() }
+    .map { it.name }
+
+// ✅ GOOD: Null safety
+val name: String? = camera?.name
+val displayName = name ?: "Unknown"
+
+// ✅ GOOD: Scope functions
+camera?.let { cam ->
+    connectCamera(cam)
+    startStream(cam)
+}
+```
+
+## Dependency Injection
+
+### Simple DI pattern
+```kotlin
+// ✅ GOOD: Constructor injection
+class CameraRepository(
+    private val sdk: CameraSDK,
+    private val localDb: CameraDatabase
+) {
+    suspend fun getCamera(id: String): Camera {
+        return localDb.getCamera(id) ?: sdk.fetchCamera(id)
+    }
+}
+
+// ✅ GOOD: Factory pattern
+object RepositoryFactory {
+    fun createCameraRepository(context: Context): CameraRepository {
+        val sdk = CameraSDK.getInstance(context)
+        val db = Room.databaseBuilder(context, CameraDatabase::class.java, "cameras").build()
+        return CameraRepository(sdk, db)
+    }
+}
+```
+
+## Testing
+
+### Unit test with Coroutines
+```kotlin
+// ✅ GOOD: Test with runTest
+@Test
+fun `connectCamera should return camera on success`() = runTest {
+    val repository = CameraRepository(mockSdk, mockDb)
+    val result = repository.connect("camera_123")
+    
+    assertTrue(result.isSuccess)
+    assertEquals("camera_123", result.getOrNull()?.id)
+}
+```
+
+## Performance
+
+### Optimize allocations
+```kotlin
+// ✅ GOOD: Reuse objects
+private val frameBuffer = ByteArray(1024 * 1024)  // Reuse buffer
+
+fun processFrame(data: ByteArray) {
+    System.arraycopy(data, 0, frameBuffer, 0, data.size)
+    // Process frameBuffer
+}
+
+// ✅ GOOD: Use sequences for large collections
+cameras.asSequence()
+    .filter { it.isOnline() }
+    .map { it.process() }
+    .take(10)
+    .toList()
+```
