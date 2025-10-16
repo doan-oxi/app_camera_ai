@@ -1,0 +1,449 @@
+---
+description: "Performance optimization: RxDart for reactive streams, Isolates for heavy computation, multi-threading for video processing, and optimization strategies."
+globs:
+  - "lib/**/*.dart"
+alwaysApply: false
+---
+
+# Performance Optimization
+
+## RxDart for Reactive Streams
+
+### Use BehaviorSubject for state
+```dart
+// ✅ GOOD: RxDart for reactive state management
+import 'package:rxdart/rxdart.dart';
+
+class CameraStreamManager {
+  final _connectionSubject = BehaviorSubject<ConnectionState>.seeded(ConnectionState.disconnected);
+  final _frameSubject = BehaviorSubject<VideoFrame?>();
+  final _statusSubject = BehaviorSubject<CameraStatus>();
+  
+  // Expose as streams
+  Stream<ConnectionState> get connectionStream => _connectionSubject.stream;
+  Stream<VideoFrame?> get frameStream => _frameSubject.stream;
+  Stream<CameraStatus> get statusStream => _statusSubject.stream;
+  
+  // Current values
+  ConnectionState get currentConnection => _connectionSubject.value;
+  VideoFrame? get currentFrame => _frameSubject.valueOrNull;
+  
+  void updateConnection(ConnectionState state) => _connectionSubject.add(state);
+  void updateFrame(VideoFrame frame) => _frameSubject.add(frame);
+  
+  void dispose() {
+    _connectionSubject.close();
+    _frameSubject.close();
+    _statusSubject.close();
+  }
+}
+```
+
+### Combine multiple streams
+```dart
+// ✅ GOOD: Combine streams with RxDart
+import 'package:rxdart/rxdart.dart';
+
+class CameraMonitor {
+  Stream<CameraState> get combinedState => Rx.combineLatest3(
+    _connectionStream,
+    _batteryStream,
+    _statusStream,
+    (ConnectionState connection, int battery, CameraStatus status) {
+      return CameraState(
+        connection: connection,
+        batteryLevel: battery,
+        status: status,
+      );
+    },
+  );
+  
+  // Debounce user input
+  Stream<String> get searchQuery => _searchController.stream
+      .debounceTime(Duration(milliseconds: 300))
+      .distinct();
+  
+  // Throttle camera status updates
+  Stream<CameraStatus> get throttledStatus => _statusStream
+      .throttleTime(Duration(seconds: 1));
+}
+```
+
+### Stream transformations
+```dart
+// ✅ GOOD: Transform streams efficiently
+class VideoStreamProcessor {
+  Stream<ProcessedFrame> processFrames(Stream<RawFrame> rawFrames) {
+    return rawFrames
+        .where((frame) => frame.isValid)                    // Filter
+        .map((frame) => frame.toProcessedFrame())          // Transform
+        .bufferTime(Duration(milliseconds: 100))           // Batch processing
+        .expand((frames) => frames)                         // Flatten
+        .distinct((frame) => frame.timestamp)              // Deduplicate
+        .shareReplay(maxSize: 1);                          // Cache latest
+  }
+}
+```
+
+## Isolates for Heavy Computation
+
+### Video frame processing
+```dart
+// ✅ GOOD: Use compute() for CPU-intensive work
+import 'package:flutter/foundation.dart';
+
+class VideoFrameProcessor {
+  Future<ProcessedFrame> processFrame(RawFrame frame) async {
+    return compute(_processFrameIsolate, frame);
+  }
+  
+  // Top-level or static function required for isolate
+  static ProcessedFrame _processFrameIsolate(RawFrame frame) {
+    // CPU-intensive: decode, resize, apply filters
+    final decoded = decodeH264(frame.data);
+    final resized = resize(decoded, 1920, 1080);
+    final filtered = applyFilters(resized);
+    
+    return ProcessedFrame(
+      timestamp: frame.timestamp,
+      data: filtered,
+    );
+  }
+}
+```
+
+### AI detection in isolate
+```dart
+// ✅ GOOD: Isolate for AI inference
+class AIDetectionService {
+  Future<List<Detection>> detectObjects(VideoFrame frame) async {
+    return compute(_detectObjectsIsolate, frame);
+  }
+  
+  static List<Detection> _detectObjectsIsolate(VideoFrame frame) {
+    // Heavy AI model inference
+    final model = AIModel.load('detection_model.tflite');
+    final predictions = model.predict(frame.data);
+    
+    return predictions
+        .where((p) => p.confidence > 0.5)
+        .map((p) => Detection.fromPrediction(p))
+        .toList();
+  }
+}
+```
+
+### Long-running isolate
+```dart
+// ✅ GOOD: Dedicated isolate for continuous processing
+import 'dart:isolate';
+
+class VideoStreamIsolate {
+  late Isolate _isolate;
+  late SendPort _sendPort;
+  final _receivePort = ReceivePort();
+  
+  Future<void> start() async {
+    _isolate = await Isolate.spawn(
+      _videoProcessingIsolate,
+      _receivePort.sendPort,
+    );
+    
+    _sendPort = await _receivePort.first as SendPort;
+    
+    // Listen to processed frames
+    _receivePort.listen((processedFrame) {
+      _frameController.add(processedFrame);
+    });
+  }
+  
+  void processFrame(RawFrame frame) {
+    _sendPort.send(frame);
+  }
+  
+  void dispose() {
+    _isolate.kill();
+    _receivePort.close();
+  }
+  
+  static void _videoProcessingIsolate(SendPort mainSendPort) {
+    final isolateReceivePort = ReceivePort();
+    mainSendPort.send(isolateReceivePort.sendPort);
+    
+    isolateReceivePort.listen((rawFrame) {
+      // Process frame in isolate
+      final processed = processFrame(rawFrame);
+      mainSendPort.send(processed);
+    });
+  }
+}
+```
+
+## Multi-Threading for Video
+
+### Parallel processing
+```dart
+// ✅ GOOD: Process multiple frames in parallel
+class ParallelVideoProcessor {
+  final int threadCount = Platform.numberOfProcessors;
+  final _taskQueue = <RawFrame>[];
+  final _workers = <Isolate>[];
+  
+  Future<void> processFrames(List<RawFrame> frames) async {
+    // Split frames across isolates
+    final chunkSize = frames.length ~/ threadCount;
+    final futures = <Future<List<ProcessedFrame>>>[];
+    
+    for (var i = 0; i < threadCount; i++) {
+      final start = i * chunkSize;
+      final end = (i == threadCount - 1) ? frames.length : start + chunkSize;
+      final chunk = frames.sublist(start, end);
+      
+      futures.add(compute(_processFrameChunk, chunk));
+    }
+    
+    final results = await Future.wait(futures);
+    final allProcessed = results.expand((list) => list).toList();
+    
+    return allProcessed;
+  }
+  
+  static List<ProcessedFrame> _processFrameChunk(List<RawFrame> frames) {
+    return frames.map((frame) => processFrame(frame)).toList();
+  }
+}
+```
+
+## Widget Performance
+
+### Optimize rebuilds
+```dart
+// ✅ GOOD: Minimize rebuilds with const and keys
+class CameraListView extends StatelessWidget {
+  final List<Camera> cameras;
+  
+  const CameraListView({required this.cameras, Key? key}) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: cameras.length,
+      itemBuilder: (context, index) {
+        final camera = cameras[index];
+        return CameraListItem(
+          key: ValueKey(camera.id),  // Stable key for efficient updates
+          camera: camera,
+        );
+      },
+    );
+  }
+}
+
+class CameraListItem extends StatelessWidget {
+  final Camera camera;
+  
+  const CameraListItem({required this.camera, Key? key}) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return const Card(  // Use const wherever possible
+      child: ListTile(
+        leading: const Icon(Icons.camera),  // Const widgets
+        title: Text(camera.name),
+      ),
+    );
+  }
+}
+```
+
+### Use RepaintBoundary for expensive widgets
+```dart
+// ✅ GOOD: Isolate repaints
+class VideoPlayerWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        RepaintBoundary(
+          child: VideoDisplay(),  // Expensive: repaints every frame
+        ),
+        const VideoControls(),    // Static: doesn't repaint
+      ],
+    );
+  }
+}
+```
+
+### Lazy loading with AutomaticKeepAlive
+```dart
+// ✅ GOOD: Keep expensive widgets alive
+class CameraDetailsTab extends StatefulWidget {
+  @override
+  State<CameraDetailsTab> createState() => _CameraDetailsTabState();
+}
+
+class _CameraDetailsTabState extends State<CameraDetailsTab>
+    with AutomaticKeepAliveClientMixin {
+  
+  @override
+  bool get wantKeepAlive => true;  // Keep state alive when switching tabs
+  
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);  // Must call when using AutomaticKeepAliveClientMixin
+    return ExpensiveWidget();
+  }
+}
+```
+
+## Memory Management
+
+### Dispose resources properly
+```dart
+// ✅ GOOD: Always dispose controllers
+class VideoStreamController {
+  final _frameController = StreamController<VideoFrame>.broadcast();
+  final _statusController = BehaviorSubject<StreamStatus>();
+  Timer? _timer;
+  
+  void dispose() {
+    _timer?.cancel();
+    _frameController.close();
+    _statusController.close();
+    // Dispose ALL resources
+  }
+}
+```
+
+### Use WeakReference for caching
+```dart
+// ✅ GOOD: Cache with memory awareness
+class ImageCacheManager {
+  final _cache = <String, WeakReference<Image>>{};
+  
+  Image? getCached(String url) {
+    final ref = _cache[url];
+    return ref?.target;  // Returns null if garbage collected
+  }
+  
+  void cache(String url, Image image) {
+    _cache[url] = WeakReference(image);
+  }
+}
+```
+
+### Object pooling for frequent allocations
+```dart
+// ✅ GOOD: Reuse objects instead of creating new ones
+class FrameBufferPool {
+  final _available = <Uint8List>[];
+  final int bufferSize;
+  
+  FrameBufferPool({required this.bufferSize});
+  
+  Uint8List acquire() {
+    if (_available.isNotEmpty) {
+      return _available.removeLast();
+    }
+    return Uint8List(bufferSize);  // Create only if pool empty
+  }
+  
+  void release(Uint8List buffer) {
+    buffer.fillRange(0, buffer.length, 0);  // Clear data
+    _available.add(buffer);
+  }
+}
+```
+
+## Network Optimization
+
+### Batch API calls
+```dart
+// ✅ GOOD: Batch multiple requests
+class CameraAPI {
+  Future<List<Camera>> fetchMultipleCameras(List<String> ids) async {
+    // Single request for multiple cameras
+    final response = await http.post(
+      '/cameras/batch',
+      body: jsonEncode({'ids': ids}),
+    );
+    return (jsonDecode(response.body) as List)
+        .map((json) => Camera.fromJson(json))
+        .toList();
+  }
+}
+
+// ❌ BAD: Individual requests
+Future<List<Camera>> fetchCameras(List<String> ids) async {
+  final cameras = <Camera>[];
+  for (final id in ids) {
+    cameras.add(await fetchCamera(id));  // N+1 problem!
+  }
+  return cameras;
+}
+```
+
+### Debounce network requests
+```dart
+// ✅ GOOD: Debounce search queries
+class CameraSearchBloc {
+  final _searchSubject = BehaviorSubject<String>();
+  
+  Stream<List<Camera>> get searchResults => _searchSubject
+      .debounceTime(Duration(milliseconds: 300))  // Wait for user to stop typing
+      .distinct()                                  // Skip duplicate queries
+      .switchMap((query) => _searchCameras(query)); // Cancel previous request
+}
+```
+
+## Profiling & Monitoring
+
+### Add performance markers
+```dart
+// ✅ GOOD: Use Timeline for profiling
+import 'dart:developer' as developer;
+
+Future<void> connectCamera(String id) async {
+  final timeline = developer.Timeline.startSync('connectCamera');
+  try {
+    await _device.connect(id);
+  } finally {
+    timeline.finish();
+  }
+}
+
+// View in DevTools Performance tab
+```
+
+### Monitor frame rate
+```dart
+// ✅ GOOD: Track rendering performance
+import 'package:flutter/scheduler.dart';
+
+class PerformanceMonitor {
+  void startMonitoring() {
+    SchedulerBinding.instance.addTimingsCallback((timings) {
+      for (final timing in timings) {
+        final fps = 1000 / timing.totalSpan.inMilliseconds;
+        if (fps < 55) {
+          print('WARNING: Low FPS detected: $fps');
+        }
+      }
+    });
+  }
+}
+```
+
+## Quick Optimization Checklist
+
+Before optimizing, **profile first!**
+- ✅ Use RxDart for reactive streams (BehaviorSubject, combineLatest)
+- ✅ Use Isolates for CPU-intensive work (compute, Isolate.spawn)
+- ✅ Use const constructors for widgets
+- ✅ Add keys to list items (ValueKey)
+- ✅ Use RepaintBoundary for expensive widgets
+- ✅ Dispose ALL controllers and streams
+- ✅ Batch network requests
+- ✅ Debounce user input
+- ✅ Use object pooling for frequent allocations
+- ✅ Profile with DevTools before and after optimization

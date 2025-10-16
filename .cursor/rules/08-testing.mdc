@@ -1,0 +1,462 @@
+---
+description: "Testing standards and strategies: unit tests for business logic, widget tests for UI, integration tests for flows, and testing best practices."
+globs:
+  - "test/**/*.dart"
+  - "lib/**/*.dart"
+alwaysApply: false
+---
+
+# Testing Standards
+
+## Testing Pyramid
+
+```
+        /\
+       /  \      E2E Tests (Few)
+      /____\     - Critical user flows
+     /      \    
+    /        \   Integration Tests (Some)
+   /__________\  - Feature interactions
+  /            \ 
+ /______________\ Unit Tests (Many)
+                  - Business logic, UseCases
+```
+
+### Coverage targets
+- **Unit tests**: 80%+ coverage
+- **Widget tests**: Critical UI components
+- **Integration tests**: Main user flows
+
+## Unit Tests (Business Logic)
+
+### Test UseCases
+```dart
+// ✅ GOOD: Test business logic in isolation
+// test/domain/usecases/connect_camera_test.dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+
+class MockCameraRepository extends Mock implements CameraRepository {}
+
+void main() {
+  late ConnectCameraUseCase useCase;
+  late MockCameraRepository mockRepository;
+  
+  setUp(() {
+    mockRepository = MockCameraRepository();
+    useCase = ConnectCameraUseCase(mockRepository);
+  });
+  
+  group('ConnectCameraUseCase', () {
+    test('should connect camera successfully', () async {
+      // Arrange
+      const cameraId = 'camera_123';
+      final expectedCamera = Camera(id: cameraId, name: 'Test Camera');
+      when(() => mockRepository.connect(cameraId))
+          .thenAnswer((_) async => expectedCamera);
+      
+      // Act
+      final result = await useCase(cameraId);
+      
+      // Assert
+      expect(result, equals(expectedCamera));
+      verify(() => mockRepository.connect(cameraId)).called(1);
+    });
+    
+    test('should throw ConnectionException on failure', () async {
+      // Arrange
+      const cameraId = 'camera_123';
+      when(() => mockRepository.connect(cameraId))
+          .thenThrow(ConnectionException('Network error'));
+      
+      // Act & Assert
+      expect(
+        () => useCase(cameraId),
+        throwsA(isA<ConnectionException>()),
+      );
+    });
+  });
+}
+```
+
+### Test Repositories
+```dart
+// ✅ GOOD: Test data layer with mocks
+// test/data/repositories/camera_repository_impl_test.dart
+void main() {
+  late CameraRepositoryImpl repository;
+  late MockVeepaiSDK mockSDK;
+  late MockLocalDatabase mockDB;
+  
+  setUp(() {
+    mockSDK = MockVeepaiSDK();
+    mockDB = MockLocalDatabase();
+    repository = CameraRepositoryImpl(
+      sdkSource: mockSDK,
+      localSource: mockDB,
+    );
+  });
+  
+  group('CameraRepositoryImpl', () {
+    test('should return camera from local DB if available', () async {
+      // Arrange
+      const cameraId = 'camera_123';
+      final camera = Camera(id: cameraId, name: 'Local Camera');
+      when(() => mockDB.getCamera(cameraId))
+          .thenAnswer((_) async => camera);
+      
+      // Act
+      final result = await repository.getCamera(cameraId);
+      
+      // Assert
+      expect(result, equals(camera));
+      verifyNever(() => mockSDK.fetchCamera(any()));  // SDK not called
+    });
+    
+    test('should fetch from SDK if not in local DB', () async {
+      // Arrange
+      const cameraId = 'camera_123';
+      final camera = Camera(id: cameraId, name: 'Remote Camera');
+      when(() => mockDB.getCamera(cameraId))
+          .thenAnswer((_) async => null);
+      when(() => mockSDK.fetchCamera(cameraId))
+          .thenAnswer((_) async => camera);
+      
+      // Act
+      final result = await repository.getCamera(cameraId);
+      
+      // Assert
+      expect(result, equals(camera));
+      verify(() => mockDB.getCamera(cameraId)).called(1);
+      verify(() => mockSDK.fetchCamera(cameraId)).called(1);
+    });
+  });
+}
+```
+
+### Test Bloc/Cubit
+```dart
+// ✅ GOOD: Test state management
+// test/presentation/bloc/camera_bloc_test.dart
+import 'package:bloc_test/bloc_test.dart';
+
+void main() {
+  late CameraBloc bloc;
+  late MockConnectCameraUseCase mockConnectUseCase;
+  
+  setUp(() {
+    mockConnectUseCase = MockConnectCameraUseCase();
+    bloc = CameraBloc(connectUseCase: mockConnectUseCase);
+  });
+  
+  tearDown(() {
+    bloc.close();
+  });
+  
+  group('CameraBloc', () {
+    blocTest<CameraBloc, CameraState>(
+      'emits [loading, loaded] when connection succeeds',
+      build: () {
+        when(() => mockConnectUseCase('camera_123'))
+            .thenAnswer((_) async => Camera(id: 'camera_123', name: 'Test'));
+        return bloc;
+      },
+      act: (bloc) => bloc.add(ConnectCamera('camera_123')),
+      expect: () => [
+        CameraLoading(),
+        CameraLoaded(Camera(id: 'camera_123', name: 'Test')),
+      ],
+      verify: (_) {
+        verify(() => mockConnectUseCase('camera_123')).called(1);
+      },
+    );
+    
+    blocTest<CameraBloc, CameraState>(
+      'emits [loading, error] when connection fails',
+      build: () {
+        when(() => mockConnectUseCase('camera_123'))
+            .thenThrow(ConnectionException('Network error'));
+        return bloc;
+      },
+      act: (bloc) => bloc.add(ConnectCamera('camera_123')),
+      expect: () => [
+        CameraLoading(),
+        CameraError('Network error'),
+      ],
+    );
+  });
+}
+```
+
+## Widget Tests (UI Components)
+
+### Test widgets in isolation
+```dart
+// ✅ GOOD: Test widget rendering and interaction
+// test/presentation/widgets/camera_card_test.dart
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  testWidgets('CameraCard displays camera info correctly', (tester) async {
+    // Arrange
+    final camera = Camera(
+      id: 'camera_123',
+      name: 'Living Room',
+      status: CameraStatus.online,
+    );
+    
+    // Act
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CameraCard(camera: camera),
+        ),
+      ),
+    );
+    
+    // Assert
+    expect(find.text('Living Room'), findsOneWidget);
+    expect(find.text('Online'), findsOneWidget);
+    expect(find.byIcon(Icons.camera), findsOneWidget);
+  });
+  
+  testWidgets('CameraCard shows offline status when disconnected', (tester) async {
+    // Arrange
+    final camera = Camera(
+      id: 'camera_123',
+      name: 'Living Room',
+      status: CameraStatus.offline,
+    );
+    
+    // Act
+    await tester.pumpWidget(
+      MaterialApp(home: CameraCard(camera: camera)),
+    );
+    
+    // Assert
+    expect(find.text('Offline'), findsOneWidget);
+    final container = tester.widget<Container>(
+      find.descendant(
+        of: find.byType(CameraCard),
+        matching: find.byType(Container),
+      ),
+    );
+    expect((container.decoration as BoxDecoration).color, AppColors.offline);
+  });
+  
+  testWidgets('CameraCard calls onTap when tapped', (tester) async {
+    // Arrange
+    var tapped = false;
+    final camera = Camera(id: 'camera_123', name: 'Test');
+    
+    // Act
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CameraCard(
+          camera: camera,
+          onTap: () => tapped = true,
+        ),
+      ),
+    );
+    await tester.tap(find.byType(CameraCard));
+    await tester.pump();
+    
+    // Assert
+    expect(tapped, isTrue);
+  });
+}
+```
+
+### Test complex UI flows
+```dart
+// ✅ GOOD: Test multi-step interactions
+testWidgets('Camera connection flow works correctly', (tester) async {
+  // Arrange
+  await tester.pumpWidget(MyApp());
+  
+  // Act - Step 1: Navigate to camera list
+  await tester.tap(find.text('Cameras'));
+  await tester.pumpAndSettle();
+  
+  // Assert - Step 1
+  expect(find.byType(CameraListScreen), findsOneWidget);
+  
+  // Act - Step 2: Tap camera
+  await tester.tap(find.text('Living Room'));
+  await tester.pumpAndSettle();
+  
+  // Assert - Step 2
+  expect(find.byType(CameraDetailsScreen), findsOneWidget);
+  
+  // Act - Step 3: Connect
+  await tester.tap(find.text('Connect'));
+  await tester.pump();  // Show loading
+  
+  // Assert - Step 3
+  expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  
+  await tester.pumpAndSettle();  // Wait for connection
+  expect(find.text('Connected'), findsOneWidget);
+});
+```
+
+## Integration Tests (E2E)
+
+### Test critical user flows
+```dart
+// ✅ GOOD: End-to-end flow test
+// integration_test/camera_connection_test.dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  
+  group('Camera connection flow', () {
+    testWidgets('user can add and connect to camera', (tester) async {
+      // Arrange
+      await tester.pumpWidget(MyApp());
+      await tester.pumpAndSettle();
+      
+      // Act - Add camera
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+      
+      await tester.enterText(find.byKey(Key('camera_id_field')), 'CAMERA123');
+      await tester.enterText(find.byKey(Key('camera_name_field')), 'Test Camera');
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      
+      // Assert - Camera added
+      expect(find.text('Test Camera'), findsOneWidget);
+      
+      // Act - Connect
+      await tester.tap(find.text('Test Camera'));
+      await tester.pumpAndSettle();
+      
+      await tester.tap(find.text('Connect'));
+      await tester.pump(Duration(seconds: 1));  // Wait for connection
+      
+      // Assert - Connected and shows video
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.byType(VideoPlayerWidget), findsOneWidget);
+    });
+  });
+}
+```
+
+## Testing Best Practices
+
+### Use test helpers
+```dart
+// ✅ GOOD: Create reusable test utilities
+// test/helpers/test_helpers.dart
+class TestHelpers {
+  static Widget makeTestableWidget(Widget child) {
+    return MaterialApp(
+      home: Scaffold(body: child),
+    );
+  }
+  
+  static Camera mockCamera({
+    String id = 'test_123',
+    String name = 'Test Camera',
+    CameraStatus status = CameraStatus.online,
+  }) {
+    return Camera(id: id, name: name, status: status);
+  }
+  
+  static Future<void> pumpUntilFound(
+    WidgetTester tester,
+    Finder finder, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final end = tester.binding.clock.now().add(timeout);
+    do {
+      if (tester.binding.clock.now().isAfter(end)) {
+        throw Exception('Timed out waiting for $finder');
+      }
+      await tester.pump(Duration(milliseconds: 100));
+    } while (finder.evaluate().isEmpty);
+  }
+}
+```
+
+### Golden tests for UI
+```dart
+// ✅ GOOD: Test visual regression
+testWidgets('CameraCard matches golden file', (tester) async {
+  await tester.pumpWidget(
+    TestHelpers.makeTestableWidget(
+      CameraCard(camera: TestHelpers.mockCamera()),
+    ),
+  );
+  
+  await expectLater(
+    find.byType(CameraCard),
+    matchesGoldenFile('goldens/camera_card.png'),
+  );
+});
+```
+
+### Mock external dependencies
+```dart
+// ✅ GOOD: Mock HTTP calls
+import 'package:http/http.dart' as http;
+import 'package:mocktail/mocktail.dart';
+
+class MockHttpClient extends Mock implements http.Client {}
+
+void main() {
+  late MockHttpClient mockClient;
+  
+  setUp(() {
+    mockClient = MockHttpClient();
+  });
+  
+  test('fetchCamera returns Camera on success', () async {
+    // Arrange
+    when(() => mockClient.get(any())).thenAnswer(
+      (_) async => http.Response(
+        '{"id": "123", "name": "Test"}',
+        200,
+      ),
+    );
+    
+    // Act & Assert
+    final camera = await fetchCamera('123', client: mockClient);
+    expect(camera.name, 'Test');
+  });
+}
+```
+
+## Testing Checklist
+
+Before merging:
+- ✅ All new UseCases have unit tests
+- ✅ All new Repositories have unit tests
+- ✅ All new Blocs/Cubits have unit tests
+- ✅ Critical widgets have widget tests
+- ✅ Main user flows have integration tests
+- ✅ Test coverage > 80%
+- ✅ All tests pass (`flutter test`)
+- ✅ No flaky tests (run 3 times to verify)
+
+## Quick Commands
+
+```bash
+# Run all tests
+flutter test
+
+# Run with coverage
+flutter test --coverage
+
+# Run specific test file
+flutter test test/domain/usecases/connect_camera_test.dart
+
+# Run integration tests
+flutter test integration_test
+
+# Generate coverage report
+genhtml coverage/lcov.info -o coverage/html
+```
