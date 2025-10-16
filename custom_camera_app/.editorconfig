@@ -1,0 +1,71 @@
+# EditorConfig - Code Formatting Standards
+# https://editorconfig.org
+# Compatible with all major IDEs and text editors
+
+# Top-most EditorConfig file
+root = true
+
+# Apply to all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Dart files
+[*.dart]
+indent_size = 2
+max_line_length = 80
+quote_type = single
+
+# Kotlin files (Android)
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 120
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_code_style_defaults = KOTLIN_OFFICIAL
+
+# Swift files (iOS)
+[*.swift]
+indent_size = 4
+max_line_length = 120
+
+# YAML files
+[*.{yaml,yml}]
+indent_size = 2
+
+# JSON files
+[*.json]
+indent_size = 2
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = 0
+
+# Gradle files
+[*.gradle]
+indent_size = 4
+
+[*.gradle.kts]
+indent_size = 4
+
+# XML files (Android resources)
+[*.xml]
+indent_size = 4
+
+# Shell scripts
+[*.sh]
+indent_size = 2
+end_of_line = lf
+
+# Batch files (Windows)
+[*.{cmd,bat}]
+end_of_line = crlf
+
+# Ignore generated files
+[{*.g.dart,*.freezed.dart,*.config.dart,*.gr.dart}]
+generated_code_marker = @generated
+

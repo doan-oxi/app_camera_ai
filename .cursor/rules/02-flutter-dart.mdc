@@ -3,7 +3,7 @@ description: "Flutter and Dart best practices for widgets, state management, per
 globs:
   - "lib/**/*.dart"
   - "test/**/*.dart"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Flutter & Dart Best Practices

@@ -4,7 +4,7 @@ globs:
   - "lib/**/*.dart"
   - "android/**/*.kt"
   - "ios/**/*.swift"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # SOLID Principles
