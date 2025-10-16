@@ -9,468 +9,113 @@ alwaysApply: true
 
 # Code Quality & Organization
 
-## KISS Principle (Keep It Simple, Stupid)
+## KISS Principle
 
-### Simplicity over cleverness
-```dart
-// ❌ BAD: Too clever, hard to understand
-final cameras = items.where((i) => i.t == 'c').map((i) => Camera(i.d, i.n)).toList();
-
-// ✅ GOOD: Clear and readable
-final cameras = items
-    .where((item) => item.type == 'camera')
-    .map((item) => Camera(id: item.id, name: item.name))
-    .toList();
-
-// ❌ BAD: Over-engineered
-abstract class AbstractCameraFactoryBuilderProxyDelegate {
-  Camera createCameraInstanceWithConfiguration(CameraConfig config);
-}
-
-// ✅ GOOD: Simple and direct
-class CameraFactory {
-  Camera create(String id, String name) => Camera(id: id, name: name);
-}
-```
+- Keep It Simple, Stupid
+- Simple over clever
+- Readable over concise
+- Explicit over implicit
+- Clear naming over comments
+- Avoid over-engineering
+- Solve today's problem, not tomorrow's
 
 ## Naming Conventions
 
-### Meaningful names (NO generic names!)
-```dart
-// ❌ BAD: Generic, meaningless names
-class Manager { }           // Manager of what?
-class Handler { }           // Handles what?
-class Util { }             // Which utilities?
-class Helper { }           // Helps with what?
-class Service { }          // Which service?
-class CameraManagerV2 { }  // Why v2? What changed?
-class EnhancedCamera { }   // Enhanced how?
+**Never use these names:**
+- `Manager`, `Handler`, `Helper`, `Util`, `Service`
+- `v1`, `v2`, `new`, `old`, `enhanced`
+- Single letters (except loop counters)
+- Abbreviations (`mgr`, `tmp`, `hlpr`)
+- Generic names (`data`, `info`, `value`)
 
-// ✅ GOOD: Specific, descriptive names
-class CameraConnectionCoordinator { }
-class VideoFrameProcessor { }
-class DateTimeFormatter { }
-class CameraAuthenticationValidator { }
-class P2PConnectionEstablisher { }
-class LiveStreamController { }
-class AIDetectionEngine { }
-```
-
-### Variable naming
-```dart
-// ❌ BAD: Unclear, abbreviated
-var c = Camera();
-var tmp = getData();
-var flag = true;
-var val = 123;
-
-// ✅ GOOD: Clear purpose
-var activeCamera = Camera();
-var pendingVideoFrames = getData();
-var isConnectionEstablished = true;
-var connectionTimeoutSeconds = 123;
-```
-
-### Boolean naming
-```dart
-// ✅ GOOD: Use is/has/can/should prefix
-bool isConnected;
-bool hasActiveStream;
-bool canDetectMotion;
-bool shouldRetryConnection;
-
-// ❌ BAD: Ambiguous
-bool connected;    // State or action?
-bool stream;       // What about stream?
-bool motion;       // Noun, not boolean
-```
+**Always use specific, descriptive names:**
+- Classes: `CameraConnectionCoordinator`, `VideoFrameProcessor`
+- Functions: `connectCamera()`, `processVideoFrame()`
+- Variables: `activeCamera`, `pendingVideoFrames`, `isConnectionEstablished`
+- Booleans: `isConnected`, `hasActiveStream`, `canDetectMotion`, `shouldRetry`
 
 ## File Size Limits
 
-### Enforce strict limits
-```dart
-// Rules:
-// - Files: < 300 lines (HARD LIMIT)
-// - Functions: < 50 lines
-// - Classes: Single responsibility
+- Files: < 300 lines (HARD LIMIT)
+- Functions: < 50 lines
+- Classes: Single responsibility
+- Split large files by feature
+- Extract complex logic to separate files
 
-// ✅ GOOD: Split large files
-// camera_bloc.dart (180 lines)
-// camera_event.dart (40 lines)
-// camera_state.dart (50 lines)
+## Shared Resources
 
-// ❌ BAD: God file
-// camera_module.dart (1200 lines) - Split this!
-```
+**Constants** (`lib/core/constants/`)
+- `app_constants.dart`: App-wide constants
+- `camera_constants.dart`: Camera-specific values
+- `network_constants.dart`: Timeouts, endpoints
+- Use class with static const fields (private constructor)
 
-### When file is too large, split by:
-```dart
-// 1. Events/States/Bloc
-lib/presentation/camera/
-  ├── bloc/
-  │   ├── camera_bloc.dart       (< 200 lines)
-  │   ├── camera_event.dart      (< 100 lines)
-  │   └── camera_state.dart      (< 100 lines)
+**Theme** (`lib/core/theme/`)
+- `app_colors.dart`: All colors (primary, accent, status, semantic)
+- `app_text_styles.dart`: Typography (heading1, body, caption)
+- `app_dimensions.dart`: Spacing, radius, icon sizes
+- `app_theme.dart`: Complete MaterialApp theme
 
-// 2. Features/Concerns
-lib/presentation/camera/
-  ├── connection/
-  │   ├── camera_connection_widget.dart
-  │   └── connection_status_indicator.dart
-  ├── video/
-  │   ├── video_player_widget.dart
-  │   └── video_controls_widget.dart
-  └── settings/
-      ├── camera_settings_widget.dart
-      └── advanced_settings_widget.dart
-```
-
-## Shared Resources Organization
-
-### Constants and Configuration
-```dart
-// ✅ GOOD: Centralized constants
-lib/core/constants/
-  ├── app_constants.dart        // App-wide constants
-  ├── camera_constants.dart     // Camera-specific
-  ├── network_constants.dart    // Network/API
-  └── storage_constants.dart    // Local storage keys
-
-// app_constants.dart
-class AppConstants {
-  static const String appName = 'Veepai Camera';
-  static const int defaultTimeout = 30;
-  static const int maxRetryAttempts = 3;
-  
-  // Private constructor (utility class)
-  AppConstants._();
-}
-
-// camera_constants.dart
-class CameraConstants {
-  static const int defaultVideoWidth = 1920;
-  static const int defaultVideoHeight = 1080;
-  static const int maxConcurrentConnections = 4;
-  static const Duration reconnectDelay = Duration(seconds: 5);
-  
-  CameraConstants._();
-}
-```
-
-### Colors and Theme
-```dart
-// ✅ GOOD: Centralized design system
-lib/core/theme/
-  ├── app_colors.dart           // All colors
-  ├── app_text_styles.dart      // Typography
-  ├── app_dimensions.dart       // Spacing, sizes
-  └── app_theme.dart            // Complete theme
-
-// app_colors.dart
-class AppColors {
-  // Primary colors
-  static const Color primary = Color(0xFF2196F3);
-  static const Color primaryDark = Color(0xFF1976D2);
-  static const Color accent = Color(0xFFFF5722);
-  
-  // Camera status colors
-  static const Color online = Color(0xFF4CAF50);
-  static const Color offline = Color(0xFF9E9E9E);
-  static const Color connecting = Color(0xFFFFC107);
-  static const Color error = Color(0xFFF44336);
-  
-  // Semantic colors
-  static const Color success = Color(0xFF4CAF50);
-  static const Color warning = Color(0xFFFFC107);
-  static const Color danger = Color(0xFFF44336);
-  static const Color info = Color(0xFF2196F3);
-  
-  AppColors._();
-}
-
-// app_text_styles.dart
-class AppTextStyles {
-  static const TextStyle heading1 = TextStyle(
-    fontSize: 24,
-    fontWeight: FontWeight.bold,
-    color: Colors.black87,
-  );
-  
-  static const TextStyle body = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.normal,
-    color: Colors.black87,
-  );
-  
-  static const TextStyle caption = TextStyle(
-    fontSize: 12,
-    color: Colors.black54,
-  );
-  
-  AppTextStyles._();
-}
-
-// app_dimensions.dart
-class AppDimensions {
-  // Spacing
-  static const double spaceXS = 4.0;
-  static const double spaceSM = 8.0;
-  static const double spaceMD = 16.0;
-  static const double spaceLG = 24.0;
-  static const double spaceXL = 32.0;
-  
-  // Border radius
-  static const double radiusSM = 4.0;
-  static const double radiusMD = 8.0;
-  static const double radiusLG = 16.0;
-  
-  // Icon sizes
-  static const double iconSM = 16.0;
-  static const double iconMD = 24.0;
-  static const double iconLG = 32.0;
-  
-  AppDimensions._();
-}
-```
-
-### Reusable Widgets
-```dart
-// ✅ GOOD: Shared widget library
-lib/presentation/widgets/
-  ├── buttons/
-  │   ├── primary_button.dart
-  │   ├── secondary_button.dart
-  │   └── icon_button_widget.dart
-  ├── cards/
-  │   ├── camera_card.dart
-  │   └── info_card.dart
-  ├── inputs/
-  │   ├── text_input_field.dart
-  │   └── password_input_field.dart
-  ├── dialogs/
-  │   ├── confirmation_dialog.dart
-  │   └── error_dialog.dart
-  └── loading/
-      ├── loading_indicator.dart
-      └── shimmer_loading.dart
-
-// Example: Reusable button
-class PrimaryButton extends StatelessWidget {
-  final String text;
-  final VoidCallback? onPressed;
-  final bool isLoading;
-  
-  const PrimaryButton({
-    required this.text,
-    this.onPressed,
-    this.isLoading = false,
-    Key? key,
-  }) : super(key: key);
-  
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: isLoading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
-        padding: EdgeInsets.symmetric(
-          horizontal: AppDimensions.spaceLG,
-          vertical: AppDimensions.spaceMD,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDimensions.radiusMD),
-        ),
-      ),
-      child: isLoading
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-            )
-          : Text(text, style: AppTextStyles.button),
-    );
-  }
-}
-```
+**Reusable Widgets** (`lib/presentation/widgets/`)
+- `buttons/`: PrimaryButton, SecondaryButton, IconButtonWidget
+- `cards/`: CameraCard, InfoCard
+- `inputs/`: TextInputField, PasswordInputField
+- `dialogs/`: ConfirmationDialog, ErrorDialog
+- `loading/`: LoadingIndicator, ShimmerLoading
 
 ## Code Reusability
 
-### Use mixins for shared behavior
-```dart
-// ✅ GOOD: Mixin for reusable functionality
-mixin ConnectionLifecycle {
-  Future<void> onConnect();
-  Future<void> onDisconnect();
-  Future<void> onReconnect();
-  
-  Future<void> handleConnectionLifecycle() async {
-    await onConnect();
-    // Handle lifecycle
-    await onDisconnect();
-  }
-}
+**Mixins for shared behavior:**
+- Create mixins for cross-cutting concerns
+- Use for lifecycle management
+- Use for common operations
+- Example: `ConnectionLifecycle`, `Disposable`
 
-class CameraDevice with ConnectionLifecycle {
-  @override
-  Future<void> onConnect() async {
-    // Camera-specific connection
-  }
-  
-  @override
-  Future<void> onDisconnect() async {
-    // Camera-specific disconnection
-  }
-  
-  @override
-  Future<void> onReconnect() async {
-    await onDisconnect();
-    await onConnect();
-  }
-}
-```
+**Extensions for utilities:**
+- String extensions: validation, formatting
+- DateTime extensions: formatting, comparison
+- Widget extensions: padding, margin helpers
+- Keep in `lib/core/extensions/`
 
-### Use extension methods
-```dart
-// ✅ GOOD: Reusable extensions
-// lib/core/extensions/string_extensions.dart
-extension StringExtensions on String {
-  bool get isValidCameraId => length >= 8 && contains(RegExp(r'^[A-Z0-9]+$'));
-  String get masked => replaceRange(4, length - 4, '*' * (length - 8));
-}
+**Base classes:**
+- Create base classes for common functionality
+- Use for error handling, logging
+- Example: `BaseBloc`, `BaseRepository`, `BaseUseCase`
 
-// lib/core/extensions/date_time_extensions.dart
-extension DateTimeExtensions on DateTime {
-  String get formattedDate => '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/$year';
-  bool get isToday {
-    final now = DateTime.now();
-    return year == now.year && month == now.month && day == now.day;
-  }
-}
+## Dependency Injection
 
-// Usage
-final id = 'CAMERA123';
-if (id.isValidCameraId) {
-  print(id.masked);  // CAME****23
-}
-```
+**Setup** (`lib/core/di/`)
+- Use GetIt for service locator
+- Register in `injection_container.dart`
+- Lazy singletons for long-lived services
+- Factories for short-lived objects
+- Never use `new` keyword directly
 
-### Base classes for inheritance
-```dart
-// ✅ GOOD: Base class for common functionality
-abstract class BaseBloc<Event, State> extends Bloc<Event, State> {
-  BaseBloc(State initialState) : super(initialState);
-  
-  @override
-  void onError(Object error, StackTrace stackTrace) {
-    super.onError(error, stackTrace);
-    logError(error, stackTrace);
-  }
-  
-  void logError(Object error, StackTrace stackTrace) {
-    // Centralized error logging
-    print('Error in ${runtimeType}: $error');
-  }
-}
+**Registration order:**
+1. Data sources
+2. Repositories
+3. UseCases
+4. Blocs/Cubits
 
-class CameraBloc extends BaseBloc<CameraEvent, CameraState> {
-  CameraBloc() : super(CameraInitial());
-  
-  // Inherits error handling automatically
-}
-```
+## Environment Configuration
 
-## Maintainability & Scalability
-
-### Dependency injection setup
-```dart
-// ✅ GOOD: Centralized DI container
-lib/core/di/
-  ├── injection.dart            // Setup
-  └── injection_container.dart  // Container
-
-// injection_container.dart
-final getIt = GetIt.instance;
-
-Future<void> setupDependencies() async {
-  // Data sources
-  getIt.registerLazySingleton<VeepaiSDK>(() => VeepaiSDK());
-  getIt.registerLazySingleton<LocalDatabase>(() => LocalDatabase());
-  
-  // Repositories
-  getIt.registerLazySingleton<CameraRepository>(
-    () => CameraRepositoryImpl(
-      sdkSource: getIt(),
-      localSource: getIt(),
-    ),
-  );
-  
-  // Use cases
-  getIt.registerFactory(() => ConnectCameraUseCase(getIt()));
-  getIt.registerFactory(() => DisconnectCameraUseCase(getIt()));
-  
-  // Blocs
-  getIt.registerFactory(() => CameraBloc(
-    connectUseCase: getIt(),
-    disconnectUseCase: getIt(),
-  ));
-}
-```
-
-### Configuration management
-```dart
-// ✅ GOOD: Environment-based config
-lib/core/config/
-  ├── app_config.dart
-  ├── dev_config.dart
-  ├── prod_config.dart
-  └── staging_config.dart
-
-// app_config.dart
-abstract class AppConfig {
-  String get apiBaseUrl;
-  String get p2pServerUrl;
-  bool get enableLogging;
-  int get connectionTimeout;
-  
-  static AppConfig get current {
-    const env = String.fromEnvironment('ENV', defaultValue: 'dev');
-    switch (env) {
-      case 'prod':
-        return ProdConfig();
-      case 'staging':
-        return StagingConfig();
-      default:
-        return DevConfig();
-    }
-  }
-}
-
-// dev_config.dart
-class DevConfig implements AppConfig {
-  @override
-  String get apiBaseUrl => 'https://dev-api.veepai.com';
-  
-  @override
-  bool get enableLogging => true;
-  
-  @override
-  int get connectionTimeout => 60;  // Longer timeout for debugging
-  
-  @override
-  String get p2pServerUrl => 'dev-p2p.veepai.com';
-}
-```
+**Config files** (`lib/core/config/`)
+- `app_config.dart`: Base abstract class
+- `dev_config.dart`: Development settings
+- `staging_config.dart`: Staging settings
+- `prod_config.dart`: Production settings
+- Select based on `--dart-define=ENV=dev`
 
 ## Quick Checklist
 
-Before committing code, ask:
-- ✅ Are all files < 300 lines?
-- ✅ Are all functions < 50 lines?
-- ✅ Are names meaningful (no `manager`, `handler`, `v1`, `enhanced`)?
-- ✅ Are constants centralized in `core/constants/`?
-- ✅ Are colors/styles in `core/theme/`?
-- ✅ Are reusable widgets in `presentation/widgets/`?
-- ✅ Can this code be reused elsewhere?
-- ✅ Is it easy to test?
-- ✅ Is it easy to maintain?
-- ✅ Does it follow SOLID principles?
+Before committing:
+- ✅ All files < 300 lines?
+- ✅ All functions < 50 lines?
+- ✅ Meaningful names (no Manager, Handler, v1)?
+- ✅ Constants in `core/constants/`?
+- ✅ Colors/styles in `core/theme/`?
+- ✅ Reusable widgets extracted?
+- ✅ Code reusable elsewhere?
+- ✅ Easy to test?
+- ✅ Easy to maintain?
+- ✅ SOLID principles followed?

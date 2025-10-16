@@ -2,181 +2,105 @@
 description: "Enforce Clean Architecture with strict layer separation. Dependencies point inward only: Presentation → Domain ← Data ← Infrastructure."
 globs:
   - "lib/**/*.dart"
-alwaysApply: false
+alwaysApply: true
 ---
 
-# Clean Architecture Rules
+# Clean Architecture
 
 ## Layer Structure
-```
-┌─────────────────────────────────┐
-│    Presentation Layer           │  ← Flutter widgets, state management
-│    (UI, Widgets, State)         │
-└────────────┬────────────────────┘
-             │ depends on
-┌────────────▼────────────────────┐
-│      Domain Layer               │  ← Pure Dart, business logic
-│  (Entities, UseCases, Repos)    │
-└────────────┬────────────────────┘
-             │ implemented by
-┌────────────▼────────────────────┐
-│       Data Layer                │  ← Repository implementations
-│  (Repositories, Data Sources)   │
-└────────────┬────────────────────┘
-             │ depends on
-┌────────────▼────────────────────┐
-│   Infrastructure Layer          │  ← Veepai SDK, network, storage
-│    (SDK, API, Database)         │
-└─────────────────────────────────┘
-```
 
-## Folder Structure
+Four layers with strict dependency rules:
+- **Presentation**: UI, widgets, state management (Bloc/Cubit)
+- **Domain**: Entities, UseCases, repository interfaces (Pure Dart)
+- **Data**: Repository implementations, data sources
+- **Infrastructure**: SDK, API, database, platform channels
+
+Dependencies MUST point inward only: Presentation → Domain ← Data ← Infrastructure
+
+## Folder Organization
+
 ```
 lib/
-├── domain/
-│   ├── entities/          # Business objects (Camera, VideoStream, AIDetection)
-│   ├── repositories/      # Repository interfaces ONLY
-│   └── usecases/          # Single business operations
-├── data/
-│   ├── models/            # DTOs for serialization
-│   ├── repositories/      # Repository implementations
-│   └── datasources/       # Remote/Local data sources
-├── infrastructure/
-│   ├── sdk/               # Veepai SDK wrapper
-│   ├── network/           # HTTP, P2P clients
-│   └── storage/           # Local database, cache
-└── presentation/
-    ├── screens/           # Full-screen pages
-    ├── widgets/           # Reusable UI components
-    └── state/             # Bloc/Cubit/Provider
+├── domain/entities/          # Business objects (Camera, VideoStream, AIDetection)
+├── domain/repositories/      # Repository interfaces (abstract classes)
+├── domain/usecases/          # Single business operations
+├── data/models/              # DTOs for serialization
+├── data/repositories/        # Repository implementations
+├── data/datasources/         # Remote/Local/SDK sources
+├── infrastructure/sdk/       # Veepai SDK wrapper
+├── infrastructure/network/   # HTTP, P2P clients
+├── infrastructure/storage/   # Database, cache
+├── presentation/screens/     # Full-screen pages
+├── presentation/widgets/     # Reusable components
+└── presentation/state/       # Bloc/Cubit
 ```
 
-## Layer Rules
+## Domain Layer Rules
 
-### Domain Layer (Pure Dart)
-**Scope**: `lib/domain/**/*.dart`
+- Use ONLY pure Dart (no Flutter, no SDK imports)
+- Never import `package:flutter/*`
+- Never import `package:vsdk/*`
+- Never import `dart:io`, `dart:ui`
+- All entities must be immutable
+- Repository interfaces only (no implementations)
+- UseCases contain single business operation
+- No platform-specific code
 
-✅ **ALLOWED:**
-- Pure Dart classes (no imports from Flutter/SDK)
-- Immutable entities
-- Repository interfaces (abstract classes)
-- UseCases with single responsibility
+## Data Layer Rules
 
-❌ **FORBIDDEN:**
-- `import 'package:flutter/...'`
-- `import 'package:vsdk/...'`
-- `import 'dart:io'`, `dart:ui'`
-- Mutable state
-- Business logic outside UseCases
-
-```dart
-// ✅ GOOD: Pure domain entity
-class Camera {
-  final String id;
-  final String name;
-  final CameraStatus status;
-  
-  const Camera({required this.id, required this.name, required this.status});
-}
-
-// ✅ GOOD: Repository interface
-abstract class CameraRepository {
-  Future<Camera> getCamera(String id);
-  Stream<CameraStatus> watchStatus(String id);
-}
-
-// ❌ BAD: Flutter dependency
-import 'package:flutter/material.dart';
-class Camera extends ChangeNotifier { ... }  // NEVER!
-```
-
-### Data Layer
-**Scope**: `lib/data/**/*.dart`
-
-✅ **ALLOWED:**
 - Implement domain repository interfaces
-- Convert models ↔ entities
+- Convert models ↔ entities (never expose models to domain)
 - Coordinate multiple data sources
-- Handle errors
+- Handle data transformation
+- Never contain business logic
+- Never expose SDK types
+- Return domain entities only
 
-❌ **FORBIDDEN:**
-- Business logic
-- UI concerns
-- Direct use outside infrastructure layer
+## Infrastructure Layer Rules
 
-```dart
-// ✅ GOOD
-class CameraRepositoryImpl implements CameraRepository {
-  final VeepaiSdkDataSource _sdkSource;
-  final CameraLocalDataSource _localSource;
-  
-  @override
-  Future<Camera> getCamera(String id) async {
-    final model = await _sdkSource.fetchCamera(id);
-    return model.toEntity();  // Model → Entity
-  }
-}
-```
+- Direct SDK integration allowed
+- Platform channel code here
+- Network clients (HTTP, P2P)
+- Database access (Hive, SQLite)
+- Return models (not entities)
+- Never contain business logic
+- Wrap third-party SDKs
 
-### Infrastructure Layer
-**Scope**: `lib/infrastructure/**/*.dart`
+## Presentation Layer Rules
 
-✅ **ALLOWED:**
-- Direct SDK integration (Veepai CameraDevice)
-- Platform channels
-- Network clients
-- Database access
-
-❌ **FORBIDDEN:**
-- Business logic
-- Return entities (return models instead)
-
-```dart
-// ✅ GOOD: SDK wrapper
-class VeepaiSdkDataSource {
-  final CameraDevice _device;
-  
-  Future<CameraModel> fetchCamera(String id) async {
-    await _device.connect();
-    final status = await _device.getStatus();
-    return CameraModel.fromSdk(status);  // Returns model, not entity
-  }
-}
-```
-
-### Presentation Layer
-**Scope**: `lib/presentation/**/*.dart`
-
-✅ **ALLOWED:**
-- Flutter widgets
-- State management (Bloc, Cubit, Provider)
-- Depend on domain layer ONLY
-
-❌ **FORBIDDEN:**
-- Direct SDK calls
-- Data layer dependencies
-- Business logic
-
-```dart
-// ✅ GOOD: UI calls UseCase
-class CameraBloc extends Bloc<CameraEvent, CameraState> {
-  final GetCameraUseCase _getCamera;  // Domain layer
-  
-  void _onLoad(CameraEvent event, Emitter emit) async {
-    final camera = await _getCamera(event.cameraId);
-    emit(CameraLoaded(camera));
-  }
-}
-```
+- Depend ONLY on domain layer
+- Never call repositories directly (use UseCases)
+- Never import data or infrastructure layers
+- State management with Bloc/Cubit
+- Use Provider/GetIt for DI
+- Widgets should be dumb (no business logic)
+- Extract complex logic to UseCases
 
 ## File Size Limits
-- **Files**: < 300 lines (split if larger)
-- **Functions**: < 50 lines
-- **Classes**: Single responsibility
 
-## Dependency Rule
-**ALWAYS point inward:**
-- Presentation → Domain
-- Data → Domain  
-- Infrastructure → Data
-- Domain → NOTHING (pure)
+- Files: < 300 lines (hard limit)
+- Functions: < 50 lines
+- Classes: Single responsibility
+- Split large files by feature or concern
+- Use mixins for cross-cutting concerns
+- Use extensions for utilities
+
+## Dependency Injection
+
+- Use GetIt for service locator
+- Register in `lib/core/di/injection_container.dart`
+- Lazy singletons for repositories
+- Factory for Blocs/UseCases
+- Never use Bloc/UseCase constructors directly
+- Always inject dependencies through constructor
+
+## Naming Conventions
+
+- Entities: `Camera`, `VideoStream`, `AIDetection`
+- Models: `CameraModel`, `VideoStreamDto`
+- Repositories: `CameraRepository` (interface), `CameraRepositoryImpl` (implementation)
+- UseCases: `ConnectCameraUseCase`, `GetCameraStatusUseCase`
+- Data sources: `VeepaiSdkDataSource`, `CameraLocalDataSource`
+- Blocs: `CameraBloc`, `VideoStreamBloc`
+- States: `CameraState`, `VideoStreamState`
+- Events: `CameraEvent`, `VideoStreamEvent`

@@ -10,236 +10,101 @@ alwaysApply: false
 
 ## Widget Guidelines
 
-### StatelessWidget vs StatefulWidget
-```dart
-// ✅ GOOD: Use StatelessWidget when no state
-class CameraInfoCard extends StatelessWidget {
-  final Camera camera;
-  const CameraInfoCard({required this.camera, Key? key}) : super(key: key);
-  
-  @override
-  Widget build(BuildContext context) => Card(...);
-}
-
-// ✅ GOOD: Use StatefulWidget only when managing local UI state
-class VideoPlayerWidget extends StatefulWidget {
-  @override
-  State<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
-}
-
-// ❌ BAD: StatefulWidget for business logic
-class CameraScreen extends StatefulWidget {
-  // Don't put business logic here! Use Bloc/Cubit instead
-}
-```
-
-### Widget Performance
-```dart
-// ✅ GOOD: Const constructors
-const Padding(
-  padding: EdgeInsets.all(16.0),
-  child: Text('Camera'),
-)
-
-// ✅ GOOD: Extract widgets to reduce rebuilds
-class _CameraListItem extends StatelessWidget {
-  final Camera camera;
-  const _CameraListItem(this.camera);
-  
-  @override
-  Widget build(BuildContext context) => ListTile(...);
-}
-
-// ❌ BAD: Building widgets in methods (causes unnecessary rebuilds)
-Widget _buildItem() => ListTile(...);  // Don't do this!
-```
+- Prefer StatelessWidget over StatefulWidget when possible
+- Use StatefulWidget only for local UI state (animation, focus, scroll)
+- Never put business logic in widgets
+- Extract reusable widgets to separate files
+- Use const constructors wherever possible
+- Add keys to list items (ValueKey)
+- One widget per file (except private helper widgets)
+- Keep build() method < 50 lines
 
 ## State Management
 
-### Use Bloc/Cubit for business state
-```dart
-// ✅ GOOD: Bloc for complex state
-class CameraBloc extends Bloc<CameraEvent, CameraState> {
-  final GetCameraUseCase _getCamera;
-  final WatchCameraStatusUseCase _watchStatus;
-  
-  CameraBloc({
-    required GetCameraUseCase getCamera,
-    required WatchCameraStatusUseCase watchStatus,
-  })  : _getCamera = getCamera,
-        _watchStatus = watchStatus,
-        super(CameraInitial()) {
-    on<LoadCamera>(_onLoadCamera);
-    on<StatusChanged>(_onStatusChanged);
-  }
-  
-  Future<void> _onLoadCamera(LoadCamera event, Emitter emit) async {
-    emit(CameraLoading());
-    try {
-      final camera = await _getCamera(event.cameraId);
-      emit(CameraLoaded(camera));
-      
-      // Subscribe to status changes
-      await emit.forEach(
-        _watchStatus(event.cameraId),
-        onData: (status) => CameraLoaded(camera.copyWith(status: status)),
-      );
-    } catch (e) {
-      emit(CameraError(e.toString()));
-    }
-  }
-}
-```
+- Use Bloc/Cubit for business state
+- Use Provider/GetIt for dependency injection
+- Never create Bloc instances in build() method
+- Always dispose Blocs when done
+- Use StreamBuilder for reactive UI
+- Use BlocBuilder/BlocConsumer for Bloc state
+- Never mutate state directly (always emit new state)
+- Keep state classes immutable
 
-### Use Provider for dependency injection
-```dart
-// ✅ GOOD: Multi-provider for DI
-MultiProvider(
-  providers: [
-    Provider(create: (_) => GetCameraUseCase(repository)),
-    BlocProvider(create: (context) => CameraBloc(
-      getCamera: context.read<GetCameraUseCase>(),
-    )),
-  ],
-  child: CameraScreen(),
-)
-```
+## Async/Await
 
-## Async/Await & Futures
+- Always use async/await for asynchronous operations
+- Handle errors with try-catch
+- Never use `.then()` chains (use async/await instead)
+- Use Future.wait() for parallel operations
+- Set timeouts for network operations
+- Use CancelToken for cancellable operations
+- Never block UI thread
 
-### Proper error handling
-```dart
-// ✅ GOOD: Handle errors properly
-Future<void> connectCamera(String id) async {
-  try {
-    emit(Connecting());
-    final camera = await _connectUseCase(id);
-    emit(Connected(camera));
-  } on NetworkException catch (e) {
-    emit(ConnectionError('Network error: ${e.message}'));
-  } on TimeoutException {
-    emit(ConnectionError('Connection timeout'));
-  } catch (e) {
-    emit(ConnectionError('Unknown error: $e'));
-  }
-}
+## Streams & RxDart
 
-// ❌ BAD: Swallowing errors
-try {
-  await _connectUseCase(id);
-} catch (e) {
-  // Silent failure - BAD!
-}
-```
+- Use BehaviorSubject for state streams
+- Use PublishSubject for events
+- Combine streams with Rx.combineLatest
+- Debounce user input (300ms)
+- Throttle frequent updates (1s)
+- Always close StreamControllers in dispose()
+- Use shareReplay() for expensive streams
+- Use distinct() to avoid duplicate emissions
 
-### Use Stream for continuous data
-```dart
-// ✅ GOOD: Stream for real-time video frames
-Stream<VideoFrame> get frameStream => _device.videoStream
-    .map((rawData) => VideoFrame.fromBytes(rawData))
-    .handleError((error) => print('Frame error: $error'));
+## Performance
 
-// ✅ GOOD: StreamBuilder for UI
-StreamBuilder<CameraStatus>(
-  stream: _bloc.statusStream,
-  builder: (context, snapshot) {
-    if (snapshot.hasData) return StatusWidget(snapshot.data!);
-    if (snapshot.hasError) return ErrorWidget(snapshot.error);
-    return LoadingWidget();
-  },
-)
-```
-
-## RxDart Patterns
-
-### Use BehaviorSubject for state
-```dart
-// ✅ GOOD: RxDart for reactive streams
-class VideoStreamManager {
-  final _frameController = BehaviorSubject<VideoFrame>();
-  final _statusController = BehaviorSubject<StreamStatus>();
-  
-  Stream<VideoFrame> get frameStream => _frameController.stream;
-  Stream<StreamStatus> get statusStream => _statusController.stream;
-  
-  void dispose() {
-    _frameController.close();
-    _statusController.close();
-  }
-}
-```
-
-### Combine streams
-```dart
-// ✅ GOOD: Combine multiple streams
-Stream<CameraState> get cameraState => Rx.combineLatest3(
-  _connectionStream,
-  _statusStream,
-  _batteryStream,
-  (connection, status, battery) => CameraState(
-    connection: connection,
-    status: status,
-    battery: battery,
-  ),
-);
-```
+- Use const constructors
+- Add RepaintBoundary for expensive widgets
+- Use AutomaticKeepAlive for tabs
+- Lazy load images with CachedNetworkImage
+- Use ListView.builder (not ListView)
+- Limit list items (pagination)
+- Use compute() for CPU-intensive work
+- Profile before optimizing (DevTools)
 
 ## Null Safety
 
-### Use proper null handling
-```dart
-// ✅ GOOD: Null-aware operators
-final name = camera?.name ?? 'Unknown';
-final status = camera?.status?.value ?? CameraStatus.offline;
-
-// ✅ GOOD: Null checks with if-null operator
-String? getCameraName(String? id) {
-  return id != null ? _cameras[id]?.name : null;
-}
-
-// ❌ BAD: Force unwrap without checking
-final camera = _cameras[id]!;  // Crashes if null!
-```
-
-## Performance Optimization
-
-### Use compute() for heavy operations
-```dart
-// ✅ GOOD: Offload to isolate
-Future<List<Detection>> processFrame(VideoFrame frame) async {
-  return compute(_processFrameIsolate, frame);
-}
-
-static List<Detection> _processFrameIsolate(VideoFrame frame) {
-  // Heavy AI detection logic
-  return detections;
-}
-```
-
-### Lazy initialization
-```dart
-// ✅ GOOD: Late initialization
-class CameraService {
-  late final CameraDevice _device;
-  
-  Future<void> init(String id) async {
-    _device = await CameraDevice.create(id);
-  }
-}
-```
+- Use null-aware operators (`?.`, `??`, `??=`)
+- Avoid force unwrap (`!`) unless certain
+- Use `late` for deferred initialization
+- Check null before accessing
+- Prefer nullable types over default values
+- Use `required` for mandatory parameters
 
 ## Code Organization
-- **One widget per file** (except private widgets)
-- **Group imports**: Dart SDK → Flutter → Third-party → Local
-- **Use barrel exports** for clean imports
 
-```dart
-// ✅ GOOD: Organized imports
-import 'dart:async';
+- Group imports: Dart SDK → Flutter → Third-party → Local
+- Use barrel exports (`lib/core/core.dart`)
+- One class per file
+- File name = class name in snake_case
+- Keep files < 300 lines
 
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+## Error Handling
 
-import '../../domain/entities/camera.dart';
-import '../../domain/usecases/get_camera.dart';
-```
+- Catch specific exception types
+- Provide user-friendly error messages
+- Log errors with context
+- Never swallow exceptions silently
+- Use try-catch-finally for cleanup
+- Handle network timeouts
+- Validate input before processing
+
+## Reactive Programming
+
+- Use StreamBuilder for continuous data
+- Use FutureBuilder for one-time async data
+- Dispose subscriptions in dispose()
+- Use StreamSubscription.cancel()
+- Avoid nested StreamBuilders
+- Use Rx operators for transformation
+
+## Best Practices
+
+- Use extension methods for utilities
+- Use mixins for shared behavior
+- Prefer composition over inheritance
+- Keep functions pure when possible
+- Avoid global state
+- Use dependency injection
+- Write testable code
+- Document complex logic
