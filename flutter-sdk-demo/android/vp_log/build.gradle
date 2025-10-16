@@ -1,0 +1,2 @@
+configurations.maybeCreate("default")
+artifacts.add("default", file('libs/vp_log-2.0.0.0.aar'))
