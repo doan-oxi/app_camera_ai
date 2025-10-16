@@ -4,7 +4,7 @@ globs:
   - "**/*.dart"
   - "**/*.kt"
   - "**/*.swift"
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Code Quality & Organization

@@ -1,0 +1,122 @@
+---
+description: "Common anti-patterns and mistakes to avoid in the Veepai camera application. Learn what NOT to do."
+globs:
+  - "**/*.dart"
+alwaysApply: false
+---
+
+# Anti-Patterns to Avoid
+
+## Architecture Violations
+
+- ❌ Never import SDK in domain layer
+- ❌ Never put business logic in widgets
+- ❌ Never call repositories directly from UI
+- ❌ Never skip UseCase layer (always use UseCases)
+- ❌ Never return SDK types from repositories (convert to entities)
+- ❌ Never mix presentation concerns in data layer
+- ❌ Never create circular dependencies between layers
+
+## Naming Anti-Patterns
+
+- ❌ Never use generic names: `Manager`, `Handler`, `Helper`, `Util`, `Service`
+- ❌ Never version classes: `CameraV2`, `NewCamera`, `CameraEnhanced`
+- ❌ Never use abbreviations: `cm`, `tmp`, `mgr`, `hlpr`
+- ❌ Never use meaningless names: `data`, `info`, `value`, `item`
+- ❌ Never use Hungarian notation: `strName`, `intCount`, `boolFlag`
+
+## SDK Misuse
+
+- ❌ Never call `connect()` from main thread
+- ❌ Never send CGI commands before checking `connectState`
+- ❌ Never forget to call `deviceDestroy()`
+- ❌ Never start multiple video streams without disposal
+- ❌ Never ignore `ClientConnectState` errors
+- ❌ Never block UI thread with SDK operations
+- ❌ Never cache `CameraDevice` globally (use repository)
+- ❌ Never call SDK methods after `_destroyFlag = true`
+
+## Performance Mistakes
+
+- ❌ Never process video frames on main thread
+- ❌ Never create new objects in build() method
+- ❌ Never use `setState()` in tight loops
+- ❌ Never rebuild entire widget tree for small changes
+- ❌ Never forget const constructors
+- ❌ Never skip keys in ListView.builder
+- ❌ Never use `print()` in production (use logging)
+- ❌ Never load all cameras at once (use pagination)
+
+## State Management Errors
+
+- ❌ Never use multiple state management solutions in one feature
+- ❌ Never mutate state directly (always emit new state)
+- ❌ Never forget to close StreamControllers
+- ❌ Never create Bloc instances in build() method
+- ❌ Never access Bloc after it's closed
+- ❌ Never use StatefulWidget for business state
+- ❌ Never pass Bloc through constructors (use Provider/DI)
+
+## Memory Leaks
+
+- ❌ Never forget to dispose controllers: `TextEditingController`, `AnimationController`, `StreamController`
+- ❌ Never create strong references in closures (use `[weak self]` in Swift, late binding in Dart)
+- ❌ Never register listeners without removing them
+- ❌ Never keep references to disposed widgets
+- ❌ Never cache video frames without size limit
+- ❌ Never subscribe to streams without cancellation
+
+## Testing Mistakes
+
+- ❌ Never test implementation details (test behavior)
+- ❌ Never mock domain entities (entities are pure data)
+- ❌ Never write tests that depend on execution order
+- ❌ Never use real SDK in unit tests (always mock)
+- ❌ Never skip async/await in tests
+- ❌ Never test UI logic in unit tests (use widget tests)
+- ❌ Never write integration tests without tearDown
+
+## Security Mistakes
+
+- ❌ Never log sensitive data: passwords, tokens, device IDs
+- ❌ Never store credentials in plain text
+- ❌ Never hardcode API keys or secrets
+- ❌ Never skip certificate validation in production
+- ❌ Never expose internal errors to users
+- ❌ Never trust client-side input without validation
+
+## Code Organization Mistakes
+
+- ❌ Never create files > 300 lines (split them)
+- ❌ Never create functions > 50 lines (extract methods)
+- ❌ Never put multiple unrelated classes in one file
+- ❌ Never mix different concerns in same class
+- ❌ Never create God classes with 20+ methods
+- ❌ Never duplicate code (use inheritance or composition)
+
+## AI/ML Mistakes
+
+- ❌ Never run AI inference on every frame
+- ❌ Never use full-resolution frames for AI (resize first)
+- ❌ Never block video stream for AI processing
+- ❌ Never forget to warm up model before first inference
+- ❌ Never run multiple AI models simultaneously
+- ❌ Never ignore AI timeout errors
+
+## Network Mistakes
+
+- ❌ Never make synchronous network calls
+- ❌ Never retry indefinitely without backoff
+- ❌ Never send multiple requests when one is sufficient (batch them)
+- ❌ Never ignore network timeouts
+- ❌ Never cache network responses without TTL
+- ❌ Never skip error handling for network calls
+
+## Git/Version Control
+
+- ❌ Never commit debug code or console.log statements
+- ❌ Never commit with `// TODO` without JIRA ticket
+- ❌ Never commit credentials or API keys
+- ❌ Never skip meaningful commit messages
+- ❌ Never push directly to main/master
+- ❌ Never commit generated files (build/, .dart_tool/)

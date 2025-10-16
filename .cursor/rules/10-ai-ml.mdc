@@ -1,0 +1,103 @@
+---
+description: "AI/ML implementation: detection types, human tracking, custom AI features, isolate usage, and performance optimization."
+globs:
+  - "lib/domain/usecases/ai/**/*.dart"
+  - "lib/data/datasources/ai/**/*.dart"
+alwaysApply: false
+---
+
+# AI/ML Features
+
+## AI Detection Types
+
+- Support 8 AI types: `AreaIntrusion`, `PersonStay`, `CrossBorder`, `PackageDetect`, `PetDetect`, `VehicleDetect`, `FireDetect`, `SmokeDetect`
+- Use `AICommand.setAiDetect()` to configure detection zones
+- Define detection areas with 4 points (coordinates 0-10000)
+- Set sensitivity levels: 0-100
+- Enable/disable per detection type
+- Combine multiple detection types per camera
+- Store detection config locally for offline access
+
+## Human Tracking
+
+- Enable with `AICommand.setHumanTracking(enable: true)`
+- Works only during live stream
+- Auto-follow detected person within camera's PTZ range
+- Disable when manual PTZ control needed
+- Performance impact: +10-15% CPU usage
+- Works best with 1080p resolution
+- Requires stable connection (latency < 200ms)
+
+## Human Framing
+
+- Use `AICommand.setHumanFraming()` for intelligent cropping
+- Auto-adjusts frame to keep person centered
+- Digital zoom applied (no physical PTZ movement)
+- Best for fixed-position cameras
+- Disable during recording to avoid crop artifacts
+- CPU overhead: ~5%
+
+## Human Zoom
+
+- Digital zoom on detected person: 1.0x - 3.0x
+- Use with `setHumanZoom(level: 2.0)`
+- Combine with Human Framing for best results
+- Higher zoom = lower effective resolution
+- Disable for multi-person scenarios
+
+## Custom Sound (Voice)
+
+- 20 voice types available: `Voice1` - `Voice20`
+- Upload custom audio: max 30s, MP3/WAV format
+- Use `VoiceCommand.uploadCustomVoice()`
+- Play with `playCustomVoice(voiceId: 1)`
+- Queue multiple voices (max 5 in queue)
+- Check playback status before queuing
+
+## AI Schedule Plans
+
+- Configure 21 time slots per day (0-20)
+- Each slot: 1 hour duration
+- Enable/disable AI per time slot
+- Use `PlanCommand.setAiPlan()`
+- Local time based (device timezone)
+- Sync plan to camera on schedule change
+
+## Performance Optimization
+
+- Always run AI inference in Isolates
+- Use `compute()` for single-frame detection
+- Use long-running Isolate for continuous detection
+- Limit inference FPS: 5-10 FPS (not every frame)
+- Resize frames before inference: 640x360 or lower
+- Use TFLite models for on-device inference
+- Quantize models (int8) for mobile devices
+- Cache detection results (100ms TTL)
+- Batch process frames when possible
+
+## Model Integration
+
+- Load TFLite models from assets
+- Use `Interpreter` with GPU delegate on supported devices
+- Preload models during app initialization
+- Warm up model with dummy frame
+- Handle model loading errors gracefully
+- Version models for updates
+- Store models in app's internal storage
+
+## Resource Management
+
+- Dispose AI interpreter when not in use
+- Clear detection cache on camera disconnect
+- Stop AI when app goes to background
+- Restart AI when app resumes
+- Monitor AI thread CPU usage
+- Limit concurrent AI operations (max 2)
+
+## Error Handling
+
+- Handle model loading failures
+- Catch inference timeout (max 500ms per frame)
+- Fallback to non-AI mode on repeated errors
+- Log AI errors with frame metadata
+- Provide user notification for AI unavailable

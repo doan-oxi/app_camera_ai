@@ -1,0 +1,92 @@
+---
+description: "Veepai SDK integration patterns: P2P connection, video streaming, CGI commands, resource management, and error handling."
+globs:
+  - "lib/infrastructure/sdk/**/*.dart"
+  - "lib/data/datasources/**/*.dart"
+alwaysApply: false
+---
+
+# Veepai SDK Integration
+
+## P2P Connection
+
+- Always use `CameraDevice.connect()` with proper timeout (default: 30s)
+- Check `connectState` before sending commands
+- Handle all connection states: `connecting`, `logging`, `connected`, `timeout`, `disconnect`, `password`, `maxUser`, `offline`
+- Use `lanScan: true` for local network detection
+- Implement retry logic with exponential backoff (max 3 attempts)
+- Call `disconnect()` in `onPause` lifecycle
+- Auto-reconnect in `onResume` if previously connected
+- Always check `isBack` and `isRemoteClose` flags before operations
+
+## Video Streaming
+
+- Use appropriate video source: `LiveStream`, `TFCard`, `Network`, or `File`
+- Start stream only after connection state = `connected`
+- Use `AppPlayerController` for video rendering
+- Subscribe to `frameStream` in Isolate for processing
+- Handle stream interruption gracefully (buffer, reconnect)
+- Dispose video player when leaving screen
+- Use `RepaintBoundary` around video widget
+- Limit concurrent streams (max 4 per device capability)
+
+## CGI Commands
+
+- Always use `writeCgi()` for camera commands
+- Use `waitCommandResult()` for responses (timeout: 5s default)
+- Check `needLogin: true` for commands requiring authentication
+- Validate CGI response with `StatusResult.isSuccess`
+- Handle error codes: `-1` (auth fail), `-2` (invalid param), `-3` (not supported), `-4` (illegal)
+- Use command mixins: `StatusCommand`, `CameraCommand`, `VideoCommand`, `AICommand`, `AlarmCommand`, `PTZCommand`
+- Never send commands while `connectState != connected`
+- Batch related commands when possible
+
+## Resource Management
+
+- Always call `deviceDestroy()` when disposing camera
+- Cancel all timers in dispose: `wakeupTimer?.cancel()`
+- Close all streams: `_frameController.close()`, `_statusController.close()`
+- Remove listeners: `removeListener<EventType>()`
+- Set `_destroyFlag = true` to prevent operations after disposal
+- Implement `WidgetsBindingObserver` for lifecycle
+- Use `keepAlive()` to maintain connection (interval: 10s)
+
+## Error Handling
+
+- Catch `ClientConnectState` errors: `INVALID_ID`, `OFFLINE`, `MAX_SESSION`, `CONNECT_TIMEOUT`
+- Handle network exceptions gracefully
+- Log errors with context: device ID, operation, error code
+- Never swallow exceptions silently
+- Implement fallback strategies for critical operations
+- Use `try-catch` around all SDK calls
+- Provide user-friendly error messages
+- Track error frequency for debugging
+
+## Wakeup Server
+
+- Use `DeviceWakeupServer` for offline device monitoring
+- Request wakeup status every 3s when offline
+- Change to 45s interval when online
+- Listen to `WakeupStateChanged` events
+- Auto-connect when device comes online
+- Handle `DeviceWakeupState`: `online`, `offline`, `sleeping`
+
+## Performance
+
+- Use BehaviorSubject for status streams
+- Debounce status updates (1s interval)
+- Process video frames in Isolates
+- Limit frame rate (max 30 FPS)
+- Use object pooling for frame buffers
+- Dispose SDK resources immediately when unused
+- Monitor memory usage for video streams
+
+## Security
+
+- Never log passwords or sensitive data
+- Validate `realdeviceid` matches expected ID
+- Check `DualAuthentication` flag
+- Use `verifyListener` for two-factor auth
+- Encrypt credentials in local storage
+- Clear sensitive data on logout
+- Validate server certificates for P2P
