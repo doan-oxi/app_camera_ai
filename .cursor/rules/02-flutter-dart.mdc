@@ -1,0 +1,245 @@
+---
+description: "Flutter and Dart best practices for widgets, state management, performance optimization, and reactive programming with RxDart."
+globs:
+  - "lib/**/*.dart"
+  - "test/**/*.dart"
+alwaysApply: false
+---
+
+# Flutter & Dart Best Practices
+
+## Widget Guidelines
+
+### StatelessWidget vs StatefulWidget
+```dart
+// ✅ GOOD: Use StatelessWidget when no state
+class CameraInfoCard extends StatelessWidget {
+  final Camera camera;
+  const CameraInfoCard({required this.camera, Key? key}) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) => Card(...);
+}
+
+// ✅ GOOD: Use StatefulWidget only when managing local UI state
+class VideoPlayerWidget extends StatefulWidget {
+  @override
+  State<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
+}
+
+// ❌ BAD: StatefulWidget for business logic
+class CameraScreen extends StatefulWidget {
+  // Don't put business logic here! Use Bloc/Cubit instead
+}
+```
+
+### Widget Performance
+```dart
+// ✅ GOOD: Const constructors
+const Padding(
+  padding: EdgeInsets.all(16.0),
+  child: Text('Camera'),
+)
+
+// ✅ GOOD: Extract widgets to reduce rebuilds
+class _CameraListItem extends StatelessWidget {
+  final Camera camera;
+  const _CameraListItem(this.camera);
+  
+  @override
+  Widget build(BuildContext context) => ListTile(...);
+}
+
+// ❌ BAD: Building widgets in methods (causes unnecessary rebuilds)
+Widget _buildItem() => ListTile(...);  // Don't do this!
+```
+
+## State Management
+
+### Use Bloc/Cubit for business state
+```dart
+// ✅ GOOD: Bloc for complex state
+class CameraBloc extends Bloc<CameraEvent, CameraState> {
+  final GetCameraUseCase _getCamera;
+  final WatchCameraStatusUseCase _watchStatus;
+  
+  CameraBloc({
+    required GetCameraUseCase getCamera,
+    required WatchCameraStatusUseCase watchStatus,
+  })  : _getCamera = getCamera,
+        _watchStatus = watchStatus,
+        super(CameraInitial()) {
+    on<LoadCamera>(_onLoadCamera);
+    on<StatusChanged>(_onStatusChanged);
+  }
+  
+  Future<void> _onLoadCamera(LoadCamera event, Emitter emit) async {
+    emit(CameraLoading());
+    try {
+      final camera = await _getCamera(event.cameraId);
+      emit(CameraLoaded(camera));
+      
+      // Subscribe to status changes
+      await emit.forEach(
+        _watchStatus(event.cameraId),
+        onData: (status) => CameraLoaded(camera.copyWith(status: status)),
+      );
+    } catch (e) {
+      emit(CameraError(e.toString()));
+    }
+  }
+}
+```
+
+### Use Provider for dependency injection
+```dart
+// ✅ GOOD: Multi-provider for DI
+MultiProvider(
+  providers: [
+    Provider(create: (_) => GetCameraUseCase(repository)),
+    BlocProvider(create: (context) => CameraBloc(
+      getCamera: context.read<GetCameraUseCase>(),
+    )),
+  ],
+  child: CameraScreen(),
+)
+```
+
+## Async/Await & Futures
+
+### Proper error handling
+```dart
+// ✅ GOOD: Handle errors properly
+Future<void> connectCamera(String id) async {
+  try {
+    emit(Connecting());
+    final camera = await _connectUseCase(id);
+    emit(Connected(camera));
+  } on NetworkException catch (e) {
+    emit(ConnectionError('Network error: ${e.message}'));
+  } on TimeoutException {
+    emit(ConnectionError('Connection timeout'));
+  } catch (e) {
+    emit(ConnectionError('Unknown error: $e'));
+  }
+}
+
+// ❌ BAD: Swallowing errors
+try {
+  await _connectUseCase(id);
+} catch (e) {
+  // Silent failure - BAD!
+}
+```
+
+### Use Stream for continuous data
+```dart
+// ✅ GOOD: Stream for real-time video frames
+Stream<VideoFrame> get frameStream => _device.videoStream
+    .map((rawData) => VideoFrame.fromBytes(rawData))
+    .handleError((error) => print('Frame error: $error'));
+
+// ✅ GOOD: StreamBuilder for UI
+StreamBuilder<CameraStatus>(
+  stream: _bloc.statusStream,
+  builder: (context, snapshot) {
+    if (snapshot.hasData) return StatusWidget(snapshot.data!);
+    if (snapshot.hasError) return ErrorWidget(snapshot.error);
+    return LoadingWidget();
+  },
+)
+```
+
+## RxDart Patterns
+
+### Use BehaviorSubject for state
+```dart
+// ✅ GOOD: RxDart for reactive streams
+class VideoStreamManager {
+  final _frameController = BehaviorSubject<VideoFrame>();
+  final _statusController = BehaviorSubject<StreamStatus>();
+  
+  Stream<VideoFrame> get frameStream => _frameController.stream;
+  Stream<StreamStatus> get statusStream => _statusController.stream;
+  
+  void dispose() {
+    _frameController.close();
+    _statusController.close();
+  }
+}
+```
+
+### Combine streams
+```dart
+// ✅ GOOD: Combine multiple streams
+Stream<CameraState> get cameraState => Rx.combineLatest3(
+  _connectionStream,
+  _statusStream,
+  _batteryStream,
+  (connection, status, battery) => CameraState(
+    connection: connection,
+    status: status,
+    battery: battery,
+  ),
+);
+```
+
+## Null Safety
+
+### Use proper null handling
+```dart
+// ✅ GOOD: Null-aware operators
+final name = camera?.name ?? 'Unknown';
+final status = camera?.status?.value ?? CameraStatus.offline;
+
+// ✅ GOOD: Null checks with if-null operator
+String? getCameraName(String? id) {
+  return id != null ? _cameras[id]?.name : null;
+}
+
+// ❌ BAD: Force unwrap without checking
+final camera = _cameras[id]!;  // Crashes if null!
+```
+
+## Performance Optimization
+
+### Use compute() for heavy operations
+```dart
+// ✅ GOOD: Offload to isolate
+Future<List<Detection>> processFrame(VideoFrame frame) async {
+  return compute(_processFrameIsolate, frame);
+}
+
+static List<Detection> _processFrameIsolate(VideoFrame frame) {
+  // Heavy AI detection logic
+  return detections;
+}
+```
+
+### Lazy initialization
+```dart
+// ✅ GOOD: Late initialization
+class CameraService {
+  late final CameraDevice _device;
+  
+  Future<void> init(String id) async {
+    _device = await CameraDevice.create(id);
+  }
+}
+```
+
+## Code Organization
+- **One widget per file** (except private widgets)
+- **Group imports**: Dart SDK → Flutter → Third-party → Local
+- **Use barrel exports** for clean imports
+
+```dart
+// ✅ GOOD: Organized imports
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../domain/entities/camera.dart';
+import '../../domain/usecases/get_camera.dart';
+```

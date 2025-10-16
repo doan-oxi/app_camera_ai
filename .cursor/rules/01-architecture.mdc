@@ -1,0 +1,182 @@
+---
+description: "Enforce Clean Architecture with strict layer separation. Dependencies point inward only: Presentation → Domain ← Data ← Infrastructure."
+globs:
+  - "lib/**/*.dart"
+alwaysApply: false
+---
+
+# Clean Architecture Rules
+
+## Layer Structure
+```
+┌─────────────────────────────────┐
+│    Presentation Layer           │  ← Flutter widgets, state management
+│    (UI, Widgets, State)         │
+└────────────┬────────────────────┘
+             │ depends on
+┌────────────▼────────────────────┐
+│      Domain Layer               │  ← Pure Dart, business logic
+│  (Entities, UseCases, Repos)    │
+└────────────┬────────────────────┘
+             │ implemented by
+┌────────────▼────────────────────┐
+│       Data Layer                │  ← Repository implementations
+│  (Repositories, Data Sources)   │
+└────────────┬────────────────────┘
+             │ depends on
+┌────────────▼────────────────────┐
+│   Infrastructure Layer          │  ← Veepai SDK, network, storage
+│    (SDK, API, Database)         │
+└─────────────────────────────────┘
+```
+
+## Folder Structure
+```
+lib/
+├── domain/
+│   ├── entities/          # Business objects (Camera, VideoStream, AIDetection)
+│   ├── repositories/      # Repository interfaces ONLY
+│   └── usecases/          # Single business operations
+├── data/
+│   ├── models/            # DTOs for serialization
+│   ├── repositories/      # Repository implementations
+│   └── datasources/       # Remote/Local data sources
+├── infrastructure/
+│   ├── sdk/               # Veepai SDK wrapper
+│   ├── network/           # HTTP, P2P clients
+│   └── storage/           # Local database, cache
+└── presentation/
+    ├── screens/           # Full-screen pages
+    ├── widgets/           # Reusable UI components
+    └── state/             # Bloc/Cubit/Provider
+```
+
+## Layer Rules
+
+### Domain Layer (Pure Dart)
+**Scope**: `lib/domain/**/*.dart`
+
+✅ **ALLOWED:**
+- Pure Dart classes (no imports from Flutter/SDK)
+- Immutable entities
+- Repository interfaces (abstract classes)
+- UseCases with single responsibility
+
+❌ **FORBIDDEN:**
+- `import 'package:flutter/...'`
+- `import 'package:vsdk/...'`
+- `import 'dart:io'`, `dart:ui'`
+- Mutable state
+- Business logic outside UseCases
+
+```dart
+// ✅ GOOD: Pure domain entity
+class Camera {
+  final String id;
+  final String name;
+  final CameraStatus status;
+  
+  const Camera({required this.id, required this.name, required this.status});
+}
+
+// ✅ GOOD: Repository interface
+abstract class CameraRepository {
+  Future<Camera> getCamera(String id);
+  Stream<CameraStatus> watchStatus(String id);
+}
+
+// ❌ BAD: Flutter dependency
+import 'package:flutter/material.dart';
+class Camera extends ChangeNotifier { ... }  // NEVER!
+```
+
+### Data Layer
+**Scope**: `lib/data/**/*.dart`
+
+✅ **ALLOWED:**
+- Implement domain repository interfaces
+- Convert models ↔ entities
+- Coordinate multiple data sources
+- Handle errors
+
+❌ **FORBIDDEN:**
+- Business logic
+- UI concerns
+- Direct use outside infrastructure layer
+
+```dart
+// ✅ GOOD
+class CameraRepositoryImpl implements CameraRepository {
+  final VeepaiSdkDataSource _sdkSource;
+  final CameraLocalDataSource _localSource;
+  
+  @override
+  Future<Camera> getCamera(String id) async {
+    final model = await _sdkSource.fetchCamera(id);
+    return model.toEntity();  // Model → Entity
+  }
+}
+```
+
+### Infrastructure Layer
+**Scope**: `lib/infrastructure/**/*.dart`
+
+✅ **ALLOWED:**
+- Direct SDK integration (Veepai CameraDevice)
+- Platform channels
+- Network clients
+- Database access
+
+❌ **FORBIDDEN:**
+- Business logic
+- Return entities (return models instead)
+
+```dart
+// ✅ GOOD: SDK wrapper
+class VeepaiSdkDataSource {
+  final CameraDevice _device;
+  
+  Future<CameraModel> fetchCamera(String id) async {
+    await _device.connect();
+    final status = await _device.getStatus();
+    return CameraModel.fromSdk(status);  // Returns model, not entity
+  }
+}
+```
+
+### Presentation Layer
+**Scope**: `lib/presentation/**/*.dart`
+
+✅ **ALLOWED:**
+- Flutter widgets
+- State management (Bloc, Cubit, Provider)
+- Depend on domain layer ONLY
+
+❌ **FORBIDDEN:**
+- Direct SDK calls
+- Data layer dependencies
+- Business logic
+
+```dart
+// ✅ GOOD: UI calls UseCase
+class CameraBloc extends Bloc<CameraEvent, CameraState> {
+  final GetCameraUseCase _getCamera;  // Domain layer
+  
+  void _onLoad(CameraEvent event, Emitter emit) async {
+    final camera = await _getCamera(event.cameraId);
+    emit(CameraLoaded(camera));
+  }
+}
+```
+
+## File Size Limits
+- **Files**: < 300 lines (split if larger)
+- **Functions**: < 50 lines
+- **Classes**: Single responsibility
+
+## Dependency Rule
+**ALWAYS point inward:**
+- Presentation → Domain
+- Data → Domain  
+- Infrastructure → Data
+- Domain → NOTHING (pure)
